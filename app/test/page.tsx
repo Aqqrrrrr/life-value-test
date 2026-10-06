@@ -1,0 +1,9 @@
+"use client";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { questions } from "../../lib/quiz-data";
+export default function TestPage() {
+  const [index, setIndex] = useState(0); const [answers, setAnswers] = useState<Record<string, string>>({}); const question = questions[index % questions.length]; const progress = useMemo(() => Math.round(((index + 1) / 24) * 100), [index]);
+  function choose(id: string) { const next = { ...answers, [question.id]: id }; setAnswers(next); if (index < 23) setIndex(index + 1); else { localStorage.setItem("life-test-answers", JSON.stringify(next)); window.location.href = "/result"; } }
+  return <main className="min-h-screen bg-[#f7f3ec] px-6 py-8 text-[#26211d]"><div className="mx-auto max-w-3xl"><Link href="/" className="text-sm text-[#a0633d]">← 返回首页</Link><div className="mt-12 flex items-center justify-between text-sm text-[#756b62]"><span>人生性价比测试</span><span>{index + 1} / 24</span></div><div className="mt-3 h-2 rounded-full bg-[#e5dbd1]"><div className="h-2 rounded-full bg-[#a0633d] transition-all" style={{ width: `${progress}%` }} /></div><section className="mt-12 rounded-[2rem] bg-[#fbf9f6] p-7 shadow-sm sm:p-12"><p className="text-sm font-semibold text-[#a0633d]">先凭直觉选，不要寻找“标准答案”</p><h1 className="mt-4 text-3xl font-bold leading-tight">{question.prompt}</h1><div className="mt-8 space-y-3">{question.choices.map((choice) => <button key={choice.id} onClick={() => choose(choice.id)} className="block w-full rounded-2xl border border-[#dfd3c8] bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-[#a0633d] hover:shadow-md"><span className="mr-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#f0e5db] text-sm font-bold text-[#a0633d]">{choice.id}</span>{choice.text}</button>)}</div><p className="mt-8 text-sm leading-6 text-[#8b8178]">选项没有对错；我们只记录你在成本、风险和长期收益之间的取舍习惯。</p></section></div></main>;
+}
