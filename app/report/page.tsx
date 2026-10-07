@@ -1,6 +1,6 @@
 "use client";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { type ComponentProps, useEffect, useState } from "react";
+function Link({ href, ...props }: ComponentProps<"a">) { return <a href={href} {...props} />; }
 
 type Report = { title: string; summary: string; dimensions: { name: string; value: string; detail: string }[]; review: string[]; sources: string[] };
 
