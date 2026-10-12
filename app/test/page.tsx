@@ -13,6 +13,11 @@ import {
 import { LIFE_STAGES, buildQuestionSet } from "../../lib/life-stage-question-bank.mjs";
 
 type Answer = string | number;
+type QuestionOption<Value extends Answer> = { value: Value; label: string };
+type AssessmentQuestion = { id: string; prompt: string } & (
+  | { group: "core"; input: "likert"; options: QuestionOption<number>[] }
+  | { group: "stage"; input: "single"; options: QuestionOption<string>[] }
+);
 
 const emergencySteps: Record<string, { title: string; action: string; detail: string }> = {
   "medical-emergency": {
@@ -58,7 +63,7 @@ export default function TestPage() {
     helpWasOpen.current = helpOpen;
   }, [helpOpen, emergency]);
 
-  const questions = lifeStages.length ? buildQuestionSet(lifeStages) : [];
+  const questions: AssessmentQuestion[] = lifeStages.length ? buildQuestionSet(lifeStages) : [];
   const question = questions[index];
   const answerReady = Boolean(question?.options.some((option) => option.value === answers[question.id]));
   const step = emergency ? emergencySteps[emergency] : null;

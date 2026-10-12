@@ -105,16 +105,57 @@ test("ratio then evidence then signal fit are compared only within a lens", () =
 });
 
 test("stage sections cap at two and deduplicate IDs while merging applicability", () => {
-  const snapshot = snapshotFor(["studying-graduating", "living-alone"], { "studying-graduating-rent-move": "terms" });
-  const shared = candidate("shared", { stageIds: ["studying-graduating", "living-alone"] });
-  const rows = [shared, { ...shared }, candidate("second"), candidate("third"), candidate("alone", { stageIds: ["living-alone"] })];
+  const snapshot = snapshotFor(["studying-graduating", "career-start", "living-alone"], {
+    "studying-graduating-rent-move": "terms", "living-alone-home-safety": "devices",
+  });
+  const shared = candidate("shared", {
+    stageIds: ["studying-graduating", "career-start", "living-alone"], signalRequirements: ["approach:verify"],
+  });
+  const rows = [shared, { ...shared }, candidate("second"), candidate("third"), candidate("alone", {
+    stageIds: ["living-alone"], signalRequirements: ["focus:home-safety"],
+  })];
   const result = recommend(snapshot, rows);
   assert.deepEqual(result.stages["studying-graduating"].map(({ id }) => id), ["shared", "second"]);
   assert.deepEqual(result.stages["living-alone"].map(({ id }) => id), ["alone"]);
+  assert.deepEqual(result.stages["career-start"], []);
   assert.deepEqual(result.stages["studying-graduating"][0].matchedStageIds, ["studying-graduating", "living-alone"]);
   const actions = Object.values(result.stages).flat();
   assert.equal(new Set(actions.map(({ id }) => id)).size, actions.length);
   assert.ok(Object.values(result.stages).every((actions) => actions.length <= 2));
+});
+
+test("a disclosed planning signal cannot qualify a wholly withheld selected stage", () => {
+  const result = recommend(snapshotFor(["career-start", "living-alone"], {
+    "living-alone-emergency-plan": "info",
+  }));
+  assert.deepEqual(result.stages["career-start"], []);
+  assert.deepEqual(result.stages["living-alone"].map(({ id }) => id), ["implementation-intention"]);
+  assert.deepEqual(result.lenses["time-energy"].matchedStageIds, ["living-alone"]);
+});
+
+test("exit conditions require experiment disclosure from the transition-plan question itself", () => {
+  const exitConditions = ACTION_CATALOG.find(({ id }) => id === "exit-conditions");
+  const unrelated = recommend(snapshotFor(["career-change", "career-start"], {
+    "career-change-transition-plan": "routine",
+    "career-change-information-check": "fit",
+    "career-start-career-experiment": "task",
+  }), [exitConditions]);
+  assert.equal(unrelated.lenses["time-energy"], null);
+  assert.deepEqual(unrelated.stages["career-change"], []);
+  const qualified = recommend(snapshotFor(["career-change"], {
+    "career-change-transition-plan": "experiments",
+  }), [exitConditions]);
+  assert.equal(qualified.lenses["time-energy"].id, "exit-conditions");
+  assert.deepEqual(qualified.lenses["time-energy"].matchedStageIds, ["career-change"]);
+});
+
+test("requirements cannot be assembled from unrelated answers within one stage", () => {
+  const row = candidate("verified-renter", { signalRequirements: ["housing:renting", "approach:verify"] });
+  const result = recommend(snapshotFor(["studying-graduating"], {
+    "studying-graduating-rent-move": "budget", "studying-graduating-job-choice": "compare",
+  }), [row]);
+  assert.equal(result.lenses["money-rights"], null);
+  assert.deepEqual(result.stages["studying-graduating"], []);
 });
 
 test("stage cap never uses another lens's ratio as a cross-lens rank", () => {

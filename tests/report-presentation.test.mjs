@@ -149,7 +149,11 @@ test("three current stages display priority first followed by canonical order", 
 });
 
 test("shared stage recommendations render one card with merged applicability and working stage links", () => {
-  const html = render({ rawSnapshot: snapshot() });
+  const html = render({ rawSnapshot: snapshot({ stageAnswers: {
+    ...defaultStageAnswers,
+    "studying-graduating-support-network": "list",
+    "living-alone-emergency-plan": "info",
+  } }) });
   assert.equal((html.match(/data-action="implementation-intention"/g) ?? []).length, 1);
   assert.equal((html.match(/<h3[^>]*>把「打算做」/g) ?? []).length, 1);
   assert.match(html, /同时适用阶段[^<]*在校\/毕业过渡[^<]*稳定工作[^<]*独居/);
