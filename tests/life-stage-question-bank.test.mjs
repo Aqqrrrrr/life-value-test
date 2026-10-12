@@ -82,8 +82,15 @@ test("all questions have unique IDs, valid options and isolated core/stage metad
       assert.equal(Object.hasOwn(question, "dimension"), false);
       assert.ok(question.category);
       assert.equal(Object.hasOwn(question, "signals"), false);
+      const optOuts = question.options.filter(({ value }) => value === "prefer-not-to-say");
+      assert.equal(optOuts.length, 1, `${question.id} must allow non-disclosure exactly once`);
+      assert.equal(optOuts[0].label, "暂不说明");
       for (const option of question.options) {
-        assert.ok(option.signals.includes(`focus:${question.category}`));
+        if (option.value === "prefer-not-to-say") {
+          assert.deepEqual(option.signals, []);
+        } else {
+          assert.ok(option.signals.includes(`focus:${question.category}`));
+        }
         assert.equal(new Set(option.signals).size, option.signals.length);
         assert.ok(option.signals.every((signal) => typeof signal === "string" && /^[a-z]+:[a-z-]+$/.test(signal)));
       }
