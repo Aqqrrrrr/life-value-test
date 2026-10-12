@@ -25,6 +25,11 @@ const emergencySteps: Record<string, { title: string; action: string; detail: st
     action: "立即联系当地急救服务，或找一位可信任的人来到你身边。",
     detail: "直接告诉对方你现在有严重自伤想法，需要他们陪伴并协助求助。中国大陆适用时可拨打 120 或 110。",
   },
+  "immediate-danger": {
+    title: "请先确保自己身处安全地点",
+    action: "立即远离危险现场，并联系当地报警或应急救援服务。中国大陆适用时可拨打 110 或 119；有人受伤可拨打 120。",
+    detail: "如果无法安全离开，请说明你所在的位置和眼前的危险，并听从救援人员指引。测评可以以后再做。",
+  },
   "ongoing-legal-proceeding": {
     title: "先保护正在进行的法律事项",
     action: "保存通知、文书、聊天记录和时间节点，尽快联系律师或当地法律援助渠道。",

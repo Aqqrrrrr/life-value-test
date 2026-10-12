@@ -54,13 +54,13 @@ test("missing, malformed and legacy snapshots offer a re-test without an invente
     const html = render({ rawSnapshot });
     assert.match(html, /重新完成测试/);
     assert.match(html, /href="\/test"/);
-    assert.doesNotMatch(html, /稳妥核实型|证据等级|data-lens/);
+    assert.doesNotMatch(html, /稳健验证型|证据等级|data-lens/);
   }
 });
 
 test("free cards render each independent lens with real conditions, caveats, costs and clickable sources", () => {
   const html = render({ rawSnapshot: snapshot() });
-  assert.match(html, /稳妥核实型/);
+  assert.match(html, /稳健验证型/);
   assert.match(html, /协作求助倾向/);
   assert.match(html, /不是.*诊断/);
   assert.match(html, /随.*变化/);
@@ -90,7 +90,7 @@ test("unclear tendencies are qualified and unmatched lenses do not receive subst
 
 test("detailed cards require access and a valid local snapshot", () => {
   const locked = render({ rawSnapshot: snapshot(), detailed: true, reportAccess: false });
-  assert.doesNotMatch(locked, /data-lens|系安全带|稳妥核实型/);
+  assert.doesNotMatch(locked, /data-lens|系安全带|稳健验证型/);
   const missing = render({ rawSnapshot: null, detailed: true, reportAccess: true });
   assert.match(missing, /已解锁详细报告；请在本设备重新完成测试以生成个性化内容/);
   assert.match(missing, /href="\/test"/);
@@ -117,7 +117,7 @@ test("controversial cards display their actual limits and all alternative applic
 
 test("style changes affect the profile while free and detailed results retain the same context actions", () => {
   const actingAnswers = Object.fromEntries(STYLE_QUESTIONS.map(({ id, reverse }) => [id, reverse ? 5 : 1]));
-  for (const [style, expectedName] of [[answers, "稳妥核实型"], [actingAnswers, "机会行动型"]]) {
+  for (const [style, expectedName] of [[answers, "稳健验证型"], [actingAnswers, "机会推进型"]]) {
     for (const detailed of [false, true]) {
       const html = render({ rawSnapshot: snapshot({}, style), detailed, reportAccess: true });
       assert.ok(html.includes(expectedName));

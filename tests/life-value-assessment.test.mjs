@@ -52,6 +52,7 @@ test("protection and evidence orientation selects steady-verify", () => {
     "evidence-1": 5, "evidence-2": 1, "evidence-3": 5,
   });
   assert.equal(scoreStyleAnswers(answers).profile.id, "steady-verify");
+  assert.equal(scoreStyleAnswers(answers).profile.name, "稳健验证型");
 });
 
 test("opportunity and quick-judgement orientation selects opportunity-act", () => {
@@ -60,6 +61,7 @@ test("opportunity and quick-judgement orientation selects opportunity-act", () =
     "evidence-1": 1, "evidence-2": 5, "evidence-3": 1,
   });
   assert.equal(scoreStyleAnswers(answers).profile.id, "opportunity-act");
+  assert.equal(scoreStyleAnswers(answers).profile.name, "机会推进型");
 });
 
 test("the remaining two combinations select their corresponding profiles", () => {
@@ -73,6 +75,8 @@ test("the remaining two combinations select their corresponding profiles", () =>
   });
   assert.equal(scoreStyleAnswers(steadyAct).profile.id, "steady-act");
   assert.equal(scoreStyleAnswers(opportunityVerify).profile.id, "opportunity-verify");
+  assert.equal(scoreStyleAnswers(steadyAct).profile.name, "稳健行动型");
+  assert.equal(scoreStyleAnswers(opportunityVerify).profile.name, "机会验证型");
 });
 
 test("collaborative responses produce the collaboration auxiliary tag", () => {
