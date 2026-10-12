@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-html-link-for-pages -- Native anchors are required by the current Vinext navigation fallback. */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ASSESSMENT_STORAGE_KEY,
   SAFETY_ROUTE_OPTIONS,
@@ -48,6 +48,15 @@ export default function TestPage() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [emergency, setEmergency] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const helpTriggerRef = useRef<HTMLButtonElement>(null);
+  const helpHeadingRef = useRef<HTMLHeadingElement>(null);
+  const helpWasOpen = useRef(false);
+
+  useEffect(() => {
+    if (helpOpen) helpHeadingRef.current?.focus();
+    else if (helpWasOpen.current) helpTriggerRef.current?.focus();
+    helpWasOpen.current = helpOpen;
+  }, [helpOpen, emergency]);
 
   const questions = lifeStages.length ? buildQuestionSet(lifeStages) : [];
   const question = questions[index];
@@ -117,22 +126,22 @@ export default function TestPage() {
         {!helpOpen && (
           <aside className="mt-6 text-xs leading-6 text-[#756b62]">
             <p>遇到医疗急症、自伤风险或即时危险，请先联系现实中的救援；正在进行的法律事项请优先寻求专业协助。</p>
-            <button type="button" onClick={() => { setEmergency(null); setHelpOpen(true); }} className="mt-1 font-semibold text-[#a0633d] underline">需要紧急协助</button>
+            <button ref={helpTriggerRef} type="button" onClick={() => { setEmergency(null); setHelpOpen(true); }} className="mt-1 font-semibold text-[#a0633d] underline">需要紧急协助</button>
           </aside>
         )}
 
         {helpOpen && (
-          <section className="mt-8 rounded-[2rem] border border-[#d9b1a3] bg-[#fff8f5] p-7 shadow-sm sm:p-12">
+          <section aria-labelledby="emergency-help-heading" className="mt-8 rounded-[2rem] border border-[#d9b1a3] bg-[#fff8f5] p-7 shadow-sm sm:p-12">
             {step ? (
               <div role="alert">
                 <p className="text-sm font-semibold text-[#a0633d]">现在的第一步</p>
-                <h1 className="mt-4 text-3xl font-bold leading-tight">{step.title}</h1>
+                <h1 ref={helpHeadingRef} id="emergency-help-heading" tabIndex={-1} className="mt-4 text-3xl font-bold leading-tight">{step.title}</h1>
                 <p className="mt-8 rounded-2xl bg-white p-5 text-lg font-semibold leading-8">{step.action}</p>
                 <p className="mt-5 text-sm leading-7 text-[#756b62]">{step.detail}</p>
               </div>
             ) : (
               <>
-                <h1 className="text-3xl font-bold leading-tight">紧急协助</h1>
+                <h1 ref={helpHeadingRef} id="emergency-help-heading" tabIndex={-1} className="text-3xl font-bold leading-tight">紧急协助</h1>
                 <p className="mt-4 text-sm leading-6 text-[#756b62]">按需查看直接求助方式。这里的选择不会作为测评答案。</p>
                 <div className="mt-8 space-y-3">{SAFETY_ROUTE_OPTIONS.map((option) => (
                   <button key={option.value} type="button" onClick={() => { if (isSafetyRoute(option.value)) setEmergency(option.value); }} className={optionClass(false)}>{option.label}</button>

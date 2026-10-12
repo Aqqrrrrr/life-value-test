@@ -20,13 +20,28 @@ export function loadTestPage() {
   const realRequire = createRequire(filename);
   const state = [];
   const snapshots = [];
+  const mountedRefs = new Set();
+  let effects = [];
+  let focusedLabel = null;
   let cursor = 0;
   const localRequire = (id) => {
-    if (id === "react") return { useState(initial) {
-      const slot = cursor++;
-      if (!(slot in state)) state[slot] = initial;
-      return [state[slot], (next) => { state[slot] = typeof next === "function" ? next(state[slot]) : next; }];
-    } };
+    if (id === "react") return {
+      useState(initial) {
+        const slot = cursor++;
+        if (!(slot in state)) state[slot] = initial;
+        return [state[slot], (next) => { state[slot] = typeof next === "function" ? next(state[slot]) : next; }];
+      },
+      useRef(initial) {
+        const slot = cursor++;
+        if (!(slot in state)) state[slot] = { current: initial };
+        return state[slot];
+      },
+      useEffect(effect, dependencies) {
+        const slot = cursor++;
+        if (!(slot in state) || dependencies.some((value, index) => !Object.is(value, state[slot][index]))) effects.push(effect);
+        state[slot] = dependencies;
+      },
+    };
     if (id === "../../lib/life-value-assessment.mjs") {
       const assessment = realRequire(id);
       return { ...assessment, createAssessmentSnapshot(input) {
@@ -38,8 +53,29 @@ export function loadTestPage() {
   };
   const compiledModule = { exports: {} };
   Function("require", "module", "exports", outputText)(localRequire, compiledModule, compiledModule.exports);
-  const render = () => { cursor = 0; return compiledModule.exports.default(); };
-  return { render, snapshots, html: () => renderToStaticMarkup(render()) };
+  function attachRefs(node) {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(attachRefs); return; }
+    const ref = node.props?.ref;
+    if (ref) {
+      const label = node.props["aria-label"] ?? renderToStaticMarkup(node).replace(/<[^>]*>/g, "");
+      const focusable = node.type === "button" || node.props.tabIndex !== undefined;
+      ref.current = { focus() { if (focusable) focusedLabel = label; } };
+      mountedRefs.add(ref);
+    }
+    attachRefs(node.props?.children);
+  }
+  const render = () => {
+    cursor = 0;
+    effects = [];
+    const tree = compiledModule.exports.default();
+    for (const ref of mountedRefs) ref.current = null;
+    mountedRefs.clear();
+    attachRefs(tree);
+    for (const effect of effects) effect();
+    return tree;
+  };
+  return { render, snapshots, html: () => renderToStaticMarkup(render()), focusedLabel: () => focusedLabel };
 }
 
 export function findButton(node, label) {
@@ -64,6 +100,30 @@ test("normal assessment starts with intake and opens help only on request", () =
   for (const option of SAFETY_ROUTE_OPTIONS) assert.equal(findButton(page.render(), option.label), null);
   click(page, "需要紧急协助");
   for (const option of SAFETY_ROUTE_OPTIONS) assert.ok(findButton(page.render(), option.label));
+  assert.equal(page.snapshots.length, 0);
+});
+
+test("help focuses its labeled heading and restores focus to the original trigger when closed", () => {
+  const page = loadTestPage();
+  page.render();
+  assert.equal(page.focusedLabel(), null, "initial intake must not steal focus");
+  click(page, "需要紧急协助");
+  assert.match(page.html(), /aria-labelledby="emergency-help-heading"/);
+  assert.equal(page.focusedLabel(), "紧急协助");
+  click(page, "我正遇到医疗急症");
+  page.render();
+  assert.equal(page.focusedLabel(), "请先处理眼前的危险");
+  click(page, "返回测评");
+  page.render();
+  assert.equal(page.focusedLabel(), "需要紧急协助");
+  click(page, "稳定工作");
+  click(page, "开始测评");
+  click(page, "需要紧急协助");
+  page.render();
+  assert.equal(page.focusedLabel(), "紧急协助");
+  click(page, "返回测评");
+  assert.match(page.html(), /1 \/ 22/);
+  assert.equal(page.focusedLabel(), "需要紧急协助");
   assert.equal(page.snapshots.length, 0);
 });
 
