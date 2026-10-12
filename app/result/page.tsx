@@ -4,6 +4,7 @@
 
 import { useSyncExternalStore } from "react";
 import { AssessmentResults } from "../../components/assessment-results";
+import { ASSESSMENT_STORAGE_KEY } from "../../lib/life-value-assessment.mjs";
 
 function subscribe(onChange: () => void) {
   window.addEventListener("storage", onChange);
@@ -11,7 +12,7 @@ function subscribe(onChange: () => void) {
 }
 
 function readSnapshot() {
-  try { return window.localStorage.getItem("life-value-test-v2"); }
+  try { return window.localStorage.getItem(ASSESSMENT_STORAGE_KEY); }
   catch { return null; }
 }
 

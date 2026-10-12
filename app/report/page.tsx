@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AssessmentResults } from "../../components/assessment-results";
+import { ASSESSMENT_STORAGE_KEY } from "../../lib/life-value-assessment.mjs";
 
 type ReportState =
   | { status: "loading" }
@@ -28,7 +29,7 @@ export default function ReportPage() {
           return;
         }
         let rawSnapshot: string | null = null;
-        try { rawSnapshot = window.localStorage.getItem("life-value-test-v2"); }
+        try { rawSnapshot = window.localStorage.getItem(ASSESSMENT_STORAGE_KEY); }
         catch { /* Unavailable browser storage uses the explicit re-test state. */ }
         setState({ status: "ready", rawSnapshot });
       } catch {

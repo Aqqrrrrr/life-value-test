@@ -25,5 +25,8 @@ test("page navigation uses native anchors while Vinext Link navigation is unavai
 
   const home = sources[pages.findIndex((file) => file === path.join(root, "app", "page.tsx"))];
   assert.match(home, /<a[^>]+href="\/test"/);
-  assert.match(home, /6 道处境筛选 \+ 12 道决策风格题/);
+  assert.match(home, /22[–—-]30/);
+  assert.match(home, /1[–—-]3/);
+  assert.match(home, /遇到紧急危险，应先寻求现实中的即时帮助/);
+  assert.doesNotMatch(home, /01 \/ 18|6 道处境筛选 \+ 12 道决策风格题/);
 });
