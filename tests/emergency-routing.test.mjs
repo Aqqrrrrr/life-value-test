@@ -6,11 +6,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
-import { EMERGENCY_OPTIONS, isEmergencySelection } from "../lib/life-value-assessment.mjs";
+import { SAFETY_ROUTE_OPTIONS } from "../lib/life-value-assessment.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-function loadTestPage(onSnapshot) {
+export function loadTestPage() {
   const filename = path.join(root, "app", "test", "page.tsx");
   const source = readFileSync(filename, "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: {
@@ -19,6 +19,7 @@ function loadTestPage(onSnapshot) {
   } });
   const realRequire = createRequire(filename);
   const state = [];
+  const snapshots = [];
   let cursor = 0;
   const localRequire = (id) => {
     if (id === "react") return { useState(initial) {
@@ -26,47 +27,77 @@ function loadTestPage(onSnapshot) {
       if (!(slot in state)) state[slot] = initial;
       return [state[slot], (next) => { state[slot] = typeof next === "function" ? next(state[slot]) : next; }];
     } };
-    if (id === "../../lib/life-value-assessment.mjs") return {
-      ...realRequire(id), createAssessmentSnapshot: onSnapshot,
-    };
+    if (id === "../../lib/life-value-assessment.mjs") {
+      const assessment = realRequire(id);
+      return { ...assessment, createAssessmentSnapshot(input) {
+        snapshots.push(input);
+        return assessment.createAssessmentSnapshot(input);
+      } };
+    }
     return realRequire(id);
   };
   const compiledModule = { exports: {} };
   Function("require", "module", "exports", outputText)(localRequire, compiledModule, compiledModule.exports);
-  return () => { cursor = 0; return compiledModule.exports.default(); };
+  const render = () => { cursor = 0; return compiledModule.exports.default(); };
+  return { render, snapshots, html: () => renderToStaticMarkup(render()) };
 }
 
-function findButton(node, label) {
+export function findButton(node, label) {
   if (!node || typeof node !== "object") return null;
   if (Array.isArray(node)) return node.map((child) => findButton(child, label)).find(Boolean) ?? null;
-  if (node.type === "button" && node.props.children === label) return node;
+  if (node.type === "button" && (node.props["aria-label"] === label || renderToStaticMarkup(node).replace(/<[^>]*>/g, "") === label)) return node;
   return findButton(node.props?.children, label);
 }
 
-test("each emergency selection opens the appropriate real card and bypasses the normal test", () => {
-  const expected = {
-    "medical-emergency": { label: "我正遇到医疗急症", text: /当地急救或报警服务/ },
-    "self-harm-risk": { label: "我有严重自伤想法", text: /严重自伤想法.*陪伴并协助求助/ },
-    "immediate-danger": { label: "我正遭遇人身威胁、火灾等紧急危险", text: /远离危险.*报警或应急救援服务/ },
-    "ongoing-legal-proceeding": { label: "我正处于正在进行的法律程序", text: /联系律师或当地法律援助渠道/ },
-  };
-  const emergencyOptions = EMERGENCY_OPTIONS.filter(({ value }) => value !== "safe-to-continue");
-  assert.deepEqual(emergencyOptions.map(({ value }) => value).sort(), Object.keys(expected).sort());
+export function click(page, label, { allowDisabled = false } = {}) {
+  const button = findButton(page.render(), label);
+  assert.ok(button, `missing button: ${label}`);
+  if (!allowDisabled) assert.ok(!button.props.disabled, `disabled button: ${label}`);
+  button.props.onClick();
+}
 
-  for (const option of emergencyOptions) {
-    const { label, text } = expected[option.value];
-    assert.equal(option.label, label);
-    assert.equal(isEmergencySelection(option.value), true);
-    let snapshotCalls = 0;
-    const render = loadTestPage(() => { snapshotCalls++; throw new Error("emergency attempted a normal snapshot"); });
-    const button = findButton(render(), label);
-    assert.ok(button, `${option.value} must be selectable`);
-    button.props.onClick();
-    const html = renderToStaticMarkup(render());
-    assert.match(html, /role="alert"/);
-    assert.match(html, text);
-    if (option.value === "immediate-danger") assert.doesNotMatch(html, /严重自伤想法/);
-    assert.doesNotMatch(html, /<button|href="\/result"|继续测评|处境筛选|决策风格/);
-    assert.equal(snapshotCalls, 0);
+test("normal assessment starts with intake and opens help only on request", () => {
+  const page = loadTestPage();
+  assert.match(page.html(), /当前生活阶段/);
+  assert.match(page.html(), /需要紧急协助/);
+  assert.doesNotMatch(page.html(), /安全筛选|现在有需要优先处理的紧急情况吗/);
+  for (const option of SAFETY_ROUTE_OPTIONS) assert.equal(findButton(page.render(), option.label), null);
+  click(page, "需要紧急协助");
+  for (const option of SAFETY_ROUTE_OPTIONS) assert.ok(findButton(page.render(), option.label));
+  assert.equal(page.snapshots.length, 0);
+});
+
+test("voluntary help routes show direct assistance without normal answers or persistence", (t) => {
+  const writes = [];
+  const navigation = [];
+  const originalWindow = globalThis.window;
+  globalThis.window = { localStorage: { setItem: (...args) => writes.push(args) }, location: { assign: (url) => navigation.push(url) } };
+  t.after(() => { if (originalWindow === undefined) delete globalThis.window; else globalThis.window = originalWindow; });
+  const expected = {
+    "medical-emergency": /当地急救或报警服务/,
+    "self-harm-risk": /严重自伤想法.*陪伴并协助求助/,
+    "immediate-danger": /远离危险.*报警或应急救援服务/,
+    "ongoing-legal-proceeding": /联系律师或当地法律援助渠道/,
+  };
+  assert.deepEqual(SAFETY_ROUTE_OPTIONS.map(({ value }) => value).sort(), Object.keys(expected).sort());
+  for (const option of SAFETY_ROUTE_OPTIONS) {
+    const page = loadTestPage();
+    click(page, "稳定工作");
+    click(page, "开始测评");
+    click(page, "比较像我");
+    click(page, "需要紧急协助");
+    click(page, option.label);
+    assert.match(page.html(), /role="alert"/);
+    assert.match(page.html(), expected[option.value]);
+    assert.equal(findButton(page.render(), "下一步"), null);
+    assert.equal(findButton(page.render(), "查看结果"), null);
+    assert.doesNotMatch(page.html(), /href="\/result"/);
+    assert.equal(page.snapshots.length, 0);
+    click(page, "返回测评");
+    assert.match(page.html(), /1 \/ 22/);
+    assert.equal(findButton(page.render(), "比较像我").props["aria-pressed"], true);
+    assert.equal(findButton(page.render(), "下一步").props.disabled, false);
   }
+  assert.deepEqual(writes, []);
+  assert.deepEqual(navigation, []);
 });
