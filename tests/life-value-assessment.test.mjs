@@ -1,129 +1,217 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  CONTEXT_QUESTIONS,
-  EMERGENCY_OPTIONS,
-  LIKERT_OPTIONS,
-  STYLE_QUESTIONS,
-  createAssessmentSnapshot,
-  isEmergencySelection,
-  parseAssessmentSnapshot,
-  scoreStyleAnswers,
-} from "../lib/life-value-assessment.mjs";
+import * as assessment from "../lib/life-value-assessment.mjs";
+import { CORE_QUESTIONS, LIFE_STAGES, buildQuestionSet } from "../lib/life-stage-question-bank.mjs";
 
-const contextAnswers = {
-  currentStage: "stable-worker",
-  priorities: ["safety-health"],
-  householdResponsibilities: ["self"],
-  residence: "renting",
-  transport: ["public-transit-walking"],
-  scarceResource: "time",
-};
+const coreAnswersWith = (values = {}) => Object.fromEntries(CORE_QUESTIONS.map(({ id }) => [id, Object.hasOwn(values, id) ? values[id] : 3]));
+const inputWith = (lifeStages = ["stable-work"], overrides = {}) => ({
+  lifeStages, priorityStage: null,
+  answers: Object.fromEntries(buildQuestionSet(lifeStages).map((question) => [question.id, question.input === "likert" ? 3 : question.options[0].value])),
+  ...overrides,
+});
+const orientedAnswers = (protection, evidence) => Object.fromEntries(CORE_QUESTIONS.map((question) => {
+  const score = question.dimension === "protection" ? protection : question.dimension === "evidence" ? evidence : 3;
+  return [question.id, question.reverse ? 6 - score : score];
+}));
 
-const answersWith = (values) => Object.fromEntries(
-  STYLE_QUESTIONS.map((question) => [question.id, values[question.id] ?? 3]),
-);
-
-test("questionnaire has six context prompts, twelve style prompts, and ordered Likert choices", () => {
-  assert.equal(CONTEXT_QUESTIONS.length, 6);
-  assert.equal(STYLE_QUESTIONS.length, 12);
-  assert.deepEqual(LIKERT_OPTIONS.map(({ value }) => value), [1, 2, 3, 4, 5]);
-  assert.ok(EMERGENCY_OPTIONS.length >= 2);
+test("v3 snapshots contain only assessment data and round-trip with their storage key", () => {
+  const snapshot = assessment.createAssessmentSnapshot(inputWith());
+  assert.equal(assessment.ASSESSMENT_STORAGE_KEY, "life-value-test-v3");
+  assert.deepEqual(Object.keys(snapshot).sort(), ["answers", "completedAt", "lifeStages", "priorityStage", "version"]);
+  assert.equal(snapshot.version, 3);
+  assert.equal(Number.isNaN(Date.parse(snapshot.completedAt)), false);
+  assert.deepEqual(assessment.parseAssessmentSnapshot(JSON.stringify(snapshot)), snapshot);
 });
 
-test("emergency choice is distinguished from continuing the assessment", () => {
-  assert.equal(isEmergencySelection("medical-emergency"), true);
-  assert.equal(isEmergencySelection("safe-to-continue"), false);
-});
-
-test("reverse-scored style items map a five to a protection score of five", () => {
-  const answers = answersWith({ "protection-1": 5, "protection-2": 5, "protection-3": 1 });
-  assert.equal(scoreStyleAnswers(answers).dimensions.protection, 5);
-});
-
-test("scoring rejects missing and out-of-range Likert answers", () => {
-  assert.throws(() => scoreStyleAnswers({}), /风格答案无效/);
-  assert.throws(() => scoreStyleAnswers(answersWith({ "protection-1": 6 })), /风格答案无效/);
-});
-
-test("protection and evidence orientation selects steady-verify", () => {
-  const answers = answersWith({
-    "protection-1": 5, "protection-2": 5, "protection-3": 1,
-    "evidence-1": 5, "evidence-2": 1, "evidence-3": 5,
+test("stage validation canonicalizes selected stages and preserves a selected priority", () => {
+  assert.deepEqual(assessment.validateStageSelection(["living-alone", "career-start", "stable-work"], "living-alone"), {
+    lifeStages: ["career-start", "stable-work", "living-alone"], priorityStage: "living-alone",
   });
-  assert.equal(scoreStyleAnswers(answers).profile.id, "steady-verify");
-  assert.equal(scoreStyleAnswers(answers).profile.name, "稳健验证型");
+  const snapshot = assessment.createAssessmentSnapshot(inputWith(["living-alone", "career-start"], { priorityStage: "living-alone" }));
+  assert.deepEqual(snapshot.lifeStages, ["career-start", "living-alone"]);
+  assert.equal(snapshot.priorityStage, "living-alone");
 });
 
-test("opportunity and quick-judgement orientation selects opportunity-act", () => {
-  const answers = answersWith({
-    "protection-1": 1, "protection-2": 1, "protection-3": 5,
-    "evidence-1": 1, "evidence-2": 5, "evidence-3": 1,
+test("stage validation rejects empty, excessive, duplicate, and unknown selections", () => {
+  for (const stages of [null, "stable-work", [], Array(1), LIFE_STAGES.slice(0, 4).map(({ id }) => id), ["stable-work", "stable-work"], ["unknown"]]) {
+    assert.throws(() => assessment.validateStageSelection(stages, null), TypeError);
+  }
+});
+
+test("priority must be null or one selected stage", () => {
+  assert.deepEqual(assessment.validateStageSelection(["stable-work"], null), { lifeStages: ["stable-work"], priorityStage: null });
+  for (const priorityStage of ["living-alone", "unknown", 1, [], undefined]) {
+    assert.throws(() => assessment.validateStageSelection(["stable-work"], priorityStage), TypeError);
+    assert.throws(() => assessment.createAssessmentSnapshot(inputWith(["stable-work"], { priorityStage })), TypeError);
+  }
+});
+
+test("question sets contain 22, 26, or 30 questions in deterministic stage order", () => {
+  for (const [stages, count] of [
+    [["stable-work"], 22], [["living-alone", "career-start"], 26], [["living-alone", "career-start", "stable-work"], 30],
+  ]) {
+    const questions = assessment.questionSetForSnapshotInput(inputWith(stages));
+    assert.equal(questions.length, count);
+    assert.deepEqual(questions.slice(0, 18).map(({ id }) => id), CORE_QUESTIONS.map(({ id }) => id));
+    assert.equal(Object.keys(assessment.createAssessmentSnapshot(inputWith(stages)).answers).length, count);
+  }
+  const questions = assessment.questionSetForSnapshotInput(inputWith(["living-alone", "career-start"]));
+  assert.equal(questions[18].stage, "career-start");
+  assert.equal(questions[22].stage, "living-alone");
+});
+
+test("question-set generation rejects invalid stages and an outsider priority", () => {
+  assert.throws(() => assessment.questionSetForSnapshotInput({ lifeStages: [], priorityStage: null }), TypeError);
+  assert.throws(() => assessment.questionSetForSnapshotInput(inputWith(["stable-work"], { priorityStage: "living-alone" })), TypeError);
+});
+
+test("snapshot owns copies of stages and answers", () => {
+  const input = inputWith();
+  const snapshot = assessment.createAssessmentSnapshot(input);
+  input.lifeStages[0] = "living-alone";
+  input.answers["core-safety-1"] = 5;
+  assert.deepEqual(snapshot.lifeStages, ["stable-work"]);
+  assert.equal(snapshot.answers["core-safety-1"], 3);
+});
+
+test("snapshot rejects missing, extra, and unselected-stage answers", () => {
+  const input = inputWith();
+  const missing = { ...input.answers };
+  delete missing["stable-work-work-boundaries"];
+  for (const answers of [missing, { ...input.answers, unknown: 3 }, { ...input.answers, "living-alone-home-safety": "devices" }, [], null]) {
+    assert.throws(() => assessment.createAssessmentSnapshot({ ...input, answers }), TypeError);
+  }
+});
+
+test("snapshot rejects non-integer and out-of-range Likert answers", () => {
+  for (const value of [0, 6, 3.5, "5", null, false, NaN, Infinity]) {
+    const input = inputWith();
+    input.answers["core-safety-1"] = value;
+    assert.throws(() => assessment.createAssessmentSnapshot(input), TypeError);
+  }
+});
+
+test("snapshot rejects unknown and non-string single-option answers", () => {
+  for (const value of ["unknown", 1, ["priority"], null, true]) {
+    const input = inputWith();
+    input.answers["stable-work-work-boundaries"] = value;
+    assert.throws(() => assessment.createAssessmentSnapshot(input), TypeError);
+  }
+});
+
+test("voluntary safety routes stay outside all question sets and stored answers", () => {
+  assert.deepEqual(assessment.SAFETY_ROUTE_OPTIONS.map(({ value }) => value), [
+    "medical-emergency", "self-harm-risk", "immediate-danger", "ongoing-legal-proceeding",
+  ]);
+  for (const stage of LIFE_STAGES) {
+    const questions = assessment.questionSetForSnapshotInput(inputWith([stage.id]));
+    for (const route of assessment.SAFETY_ROUTE_OPTIONS) {
+      assert.equal(assessment.isSafetyRoute(route.value), true);
+      assert.equal(questions.some(({ id, options }) => id === route.value || options.some(({ value }) => value === route.value)), false);
+      const input = inputWith([stage.id]);
+      input.answers[questions[18].id] = route.value;
+      assert.throws(() => assessment.createAssessmentSnapshot(input), TypeError);
+      const extra = inputWith([stage.id]);
+      extra.answers[route.value] = true;
+      assert.throws(() => assessment.createAssessmentSnapshot(extra), TypeError);
+    }
+  }
+  assert.equal(assessment.isSafetyRoute("safe-to-continue"), false);
+  assert.equal(assessment.isSafetyRoute("unknown"), false);
+});
+
+test("core reverse scoring retains the four dimensions and their paired labels", () => {
+  const scores = assessment.scoreCoreAnswers(orientedAnswers(5, 5));
+  assert.deepEqual(scores.dimensions, {
+    protection: 5, evidence: 5, lowFriction: 3, collaboration: 3,
+    opportunity: 1, quickJudgement: 1, systemPlanning: 3, autonomy: 3,
   });
-  assert.equal(scoreStyleAnswers(answers).profile.id, "opportunity-act");
-  assert.equal(scoreStyleAnswers(answers).profile.name, "机会推进型");
+  assert.equal(scores.tendencyIsClear, true);
 });
 
-test("the remaining two combinations select their corresponding profiles", () => {
-  const steadyAct = answersWith({
-    "protection-1": 5, "protection-2": 5, "protection-3": 1,
-    "evidence-1": 1, "evidence-2": 5, "evidence-3": 1,
-  });
-  const opportunityVerify = answersWith({
-    "protection-1": 1, "protection-2": 1, "protection-3": 5,
-    "evidence-1": 5, "evidence-2": 1, "evidence-3": 5,
-  });
-  assert.equal(scoreStyleAnswers(steadyAct).profile.id, "steady-act");
-  assert.equal(scoreStyleAnswers(opportunityVerify).profile.id, "opportunity-verify");
-  assert.equal(scoreStyleAnswers(steadyAct).profile.name, "稳健行动型");
-  assert.equal(scoreStyleAnswers(opportunityVerify).profile.name, "机会验证型");
+test("core scoring rejects missing and invalid core answers", () => {
+  assert.throws(() => assessment.scoreCoreAnswers({}), TypeError);
+  for (const value of [0, 6, 2.5, "5", null]) {
+    assert.throws(() => assessment.scoreCoreAnswers(coreAnswersWith({ "core-safety-1": value })), TypeError);
+  }
 });
 
-test("collaborative responses produce the collaboration auxiliary tag", () => {
-  const answers = answersWith({ "collaboration-1": 4, "collaboration-2": 2, "collaboration-3": 4 });
-  assert.deepEqual(scoreStyleAnswers(answers).auxiliaryTags, ["协作求助倾向"]);
+test("core scoring preserves all four profile labels", () => {
+  for (const [protection, evidence, id, name] of [
+    [5, 5, "steady-verify", "稳健验证型"], [5, 1, "steady-act", "稳健行动型"],
+    [1, 5, "opportunity-verify", "机会验证型"], [1, 1, "opportunity-act", "机会推进型"],
+  ]) {
+    assert.deepEqual(assessment.scoreCoreAnswers(orientedAnswers(protection, evidence)).profile, { id, name });
+  }
 });
 
-test("neutral answers do not claim a clear tendency", () => {
-  assert.equal(scoreStyleAnswers(answersWith({})).tendencyIsClear, false);
+test("collaboration and planning retain auxiliary tags and neutral tendency", () => {
+  assert.deepEqual(assessment.scoreCoreAnswers(coreAnswersWith({ "core-support-2": 4, "core-support-3": 4 })).auxiliaryTags, ["协作求助倾向"]);
+  const answers = Object.fromEntries(CORE_QUESTIONS.map(({ id, dimension, reverse }) => [id,
+    ["collaboration", "lowFriction"].includes(dimension) ? (reverse ? 5 : 1) : 3,
+  ]));
+  assert.deepEqual(assessment.scoreCoreAnswers(answers).auxiliaryTags, ["自主推进倾向", "系统规划倾向"]);
+  assert.equal(assessment.scoreCoreAnswers(coreAnswersWith()).tendencyIsClear, false);
 });
 
-test("autonomy and system-planning answers produce their auxiliary tags", () => {
-  const answers = answersWith({
-    "collaboration-1": 1, "collaboration-2": 5, "collaboration-3": 1,
-    "lowFriction-1": 1, "lowFriction-2": 1, "lowFriction-3": 5,
-  });
-  assert.deepEqual(scoreStyleAnswers(answers).auxiliaryTags, ["自主推进倾向", "系统规划倾向"]);
+test("stage answers, counts, and priorities never alter core profile scores", () => {
+  const core = orientedAnswers(5, 1);
+  const one = inputWith(["stable-work"], { priorityStage: "stable-work" });
+  const three = inputWith(["living-alone", "stable-work", "career-start"], { priorityStage: "living-alone" });
+  for (const question of buildQuestionSet(three.lifeStages).filter(({ group }) => group === "stage")) three.answers[question.id] = question.options[1].value;
+  Object.assign(one.answers, core);
+  Object.assign(three.answers, core);
+  assert.deepEqual(assessment.scoreCoreAnswers(assessment.createAssessmentSnapshot(one).answers), assessment.scoreCoreAnswers(core));
+  assert.deepEqual(assessment.scoreCoreAnswers(assessment.createAssessmentSnapshot(three).answers), assessment.scoreCoreAnswers(core));
 });
 
-test("snapshot contains only versioned assessment data and parses valid v2", () => {
-  const snapshot = createAssessmentSnapshot(contextAnswers, answersWith({}));
-  assert.deepEqual(Object.keys(snapshot).sort(), ["completedAt", "context", "styleAnswers", "version"]);
-  assert.equal(snapshot.version, 2);
-  assert.equal(parseAssessmentSnapshot(JSON.stringify(snapshot)).version, 2);
+test("context signals contain selected option signals only and deduplicate repeats", () => {
+  const snapshot = assessment.createAssessmentSnapshot(inputWith(["living-alone"]));
+  assert.deepEqual(new Set(assessment.deriveContextSignals(snapshot)), new Set([
+    "focus:home-safety", "approach:verify", "focus:emergency-plan", "approach:support",
+    "focus:living-costs", "resource:money", "focus:daily-support",
+  ]));
+  const signals = [...assessment.deriveContextSignals(snapshot)];
+  assert.equal(signals.length, new Set(signals).size);
+  assert.equal(signals.includes("approach:plan"), false);
+  assert.equal(signals.includes("care:child"), false);
+  assert.equal(signals.includes("living-alone"), false);
 });
 
-test("snapshot parser rejects malformed, old-version, incomplete, and emergency data", () => {
-  const valid = createAssessmentSnapshot(contextAnswers, answersWith({}));
-  assert.equal(parseAssessmentSnapshot("not json"), null);
-  assert.equal(parseAssessmentSnapshot(JSON.stringify({ version: 1 })), null);
-  assert.equal(parseAssessmentSnapshot(JSON.stringify({ ...valid, styleAnswers: {} })), null);
-  assert.equal(parseAssessmentSnapshot(JSON.stringify({
-    ...valid,
-    context: { ...valid.context, currentStage: "medical-emergency" },
-  })), null);
-  assert.equal(parseAssessmentSnapshot(JSON.stringify({
-    ...valid,
-    styleAnswers: { ...valid.styleAnswers, unknown: 3 },
-  })), null);
-  assert.equal(parseAssessmentSnapshot(JSON.stringify({
-    ...valid,
-    styleAnswers: { ...valid.styleAnswers, "protection-1": "5" },
-  })), null);
+test("non-disclosure options round-trip without fabricating context signals", () => {
+  const input = inputWith(["stable-work", "living-alone", "elder-family-care"]);
+  for (const question of buildQuestionSet(input.lifeStages).filter(({ group }) => group === "stage")) input.answers[question.id] = "prefer-not-to-say";
+  const snapshot = assessment.createAssessmentSnapshot(input);
+  assert.deepEqual(assessment.deriveContextSignals(snapshot), []);
+  assert.deepEqual(assessment.parseAssessmentSnapshot(JSON.stringify(snapshot)), snapshot);
+  assert.equal(snapshot.answers["elder-family-care-care-division"], "prefer-not-to-say");
 });
 
-test("snapshot preserves explicit non-disclosure selections", () => {
-  const context = { ...contextAnswers, currentStage: "prefer-not-to-say" };
-  const snapshot = createAssessmentSnapshot(context, answersWith({}));
-  assert.equal(parseAssessmentSnapshot(JSON.stringify(snapshot)).context.currentStage, "prefer-not-to-say");
+test("parser canonicalizes a valid reordered stage list", () => {
+  const snapshot = assessment.createAssessmentSnapshot(inputWith(["career-start", "living-alone"]));
+  assert.deepEqual(assessment.parseAssessmentSnapshot(JSON.stringify({ ...snapshot, lifeStages: ["living-alone", "career-start"] })).lifeStages, ["career-start", "living-alone"]);
+});
+
+test("parser rejects v2, legacy, malformed, and schema-expanded snapshots", () => {
+  const valid = assessment.createAssessmentSnapshot(inputWith());
+  for (const raw of [null, undefined, valid, "not json", "null", "[]", JSON.stringify({ version: 1 }), JSON.stringify({ version: 2, context: {}, styleAnswers: {} }),
+    JSON.stringify({ ...valid, version: 2 }), JSON.stringify({ ...valid, context: {} }), JSON.stringify({ ...valid, profile: "steady-verify" }),
+    JSON.stringify({ ...valid, completedAt: "not a date" }), JSON.stringify({ ...valid, completedAt: 1 })]) {
+    assert.equal(assessment.parseAssessmentSnapshot(raw), null);
+  }
+  for (const field of Object.keys(valid)) {
+    const incomplete = { ...valid };
+    delete incomplete[field];
+    assert.equal(assessment.parseAssessmentSnapshot(JSON.stringify(incomplete)), null);
+  }
+});
+
+test("parser rejects invalid selections and malformed answers", () => {
+  const valid = assessment.createAssessmentSnapshot(inputWith());
+  for (const mutation of [
+    { lifeStages: [] }, { lifeStages: ["unknown"] }, { lifeStages: ["stable-work", "stable-work"] },
+    { priorityStage: "living-alone" }, { answers: {} }, { answers: { ...valid.answers, unknown: 3 } },
+    { answers: { ...valid.answers, "core-safety-1": "5" } }, { answers: { ...valid.answers, "core-safety-1": 3.5 } },
+    { answers: { ...valid.answers, "stable-work-work-boundaries": "medical-emergency" } },
+  ]) assert.equal(assessment.parseAssessmentSnapshot(JSON.stringify({ ...valid, ...mutation })), null);
 });
