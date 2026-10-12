@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-html-link-for-pages -- Native anchors are required by the current Vinext navigation fallback. */
+
 import { useState } from "react";
 import {
   CONTEXT_QUESTIONS,
@@ -84,6 +86,7 @@ export default function TestPage() {
     try {
       const snapshot = createAssessmentSnapshot(context, styleAnswers);
       window.localStorage.setItem("life-value-test-v2", JSON.stringify(snapshot));
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- A full-page navigation is required by the current Vinext navigation fallback.
       window.location.assign("/result");
     } catch {
       setError("答案暂时无法保存，请检查是否已完成所有题目，再试一次。");

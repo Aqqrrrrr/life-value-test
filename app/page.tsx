@@ -1,3 +1,5 @@
+/* eslint-disable @next/next/no-html-link-for-pages -- Native anchors are required by the current Vinext navigation fallback. */
+
 const features = [
   ["6 道处境筛选 + 12 道决策风格题", "先了解你眼下的处境，再回看平时的取舍习惯。"],
   ["3 类问题分开看", "安全健康、时间精力、钱与权益有不同的判断重点。"],
