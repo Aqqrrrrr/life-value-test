@@ -118,19 +118,39 @@ test("voluntary safety routes stay outside all question sets and stored answers"
 test("response contexts retain selected core review and strength signals with explicit identity", () => {
   assert.equal(typeof assessment.deriveResponseContexts, "function");
   const input = inputWith();
-  input.answers["core-safety-1"] = "unsecured";
+  input.answers["core-safety-1"] = "ask-driver";
   const contexts = assessment.deriveResponseContexts(assessment.createAssessmentSnapshot(input));
   assert.equal(contexts.core.length, 18);
   assert.equal(contexts.stage.length, 4);
   assert.deepEqual(contexts.core[0], {
     questionId: "core-safety-1", group: "core", areaId: "safety-home", stageId: null,
-    optionValue: "unsecured", contextSignals: ["transport:driving"],
+    optionValue: "ask-driver", contextSignals: ["transport:driving", "approach:support"],
     reviewSignals: ["review:seat-belt"], strengthSignals: [], uncertain: false,
   });
-  input.answers["core-safety-1"] = "secured";
+  input.answers["core-safety-1"] = "adjust-belt";
   const safe = assessment.deriveResponseContexts(assessment.createAssessmentSnapshot(input)).core[0];
   assert.deepEqual(safe.reviewSignals, []);
   assert.deepEqual(safe.strengthSignals, ["strength:seat-belt"]);
+});
+
+test("resource-limited core scenes accept alternative first actions without treating them as completion states", () => {
+  const cases = [
+    ["core-safety-1", ["adjust-belt", "ask-driver", "change-car"]],
+    ["core-money-1", ["list-essentials", "ask-payment-date", "pause-expenses"]],
+    ["core-relationships-1", ["clarify-request", "offer-part", "suggest-help"]],
+  ];
+  for (const [questionId, actions] of cases) {
+    const question = CORE_QUESTIONS.find(({ id }) => id === questionId);
+    assert.deepEqual(question.options.filter(({ value }) => value !== "not-sure").map(({ value }) => value), actions);
+    for (const action of actions) {
+      const input = inputWith();
+      input.answers[questionId] = action;
+      const snapshot = assessment.parseAssessmentSnapshot(JSON.stringify(assessment.createAssessmentSnapshot(input)));
+      const response = assessment.deriveResponseContexts(snapshot).core.find((context) => context.questionId === questionId);
+      assert.equal(response.optionValue, action);
+      assert.equal(response.uncertain, false);
+    }
+  }
 });
 
 test("two selected stage options never splice their context into a fabricated response", () => {

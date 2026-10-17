@@ -69,6 +69,11 @@ test("scenario questions cover six areas and keep uncertainty separate from sele
   assert.equal(ASSESSMENT_CHAPTERS.length, 3);
   assert.deepEqual(ASSESSMENT_CHAPTERS.flatMap(({ areaIds }) => areaIds), LIFE_AREAS.map(({ id }) => id));
   for (const area of LIFE_AREAS) assert.equal(CORE_QUESTIONS.filter(({ areaId }) => areaId === area.id).length, 3);
+  for (const question of CORE_QUESTIONS) {
+    const actions = question.options.filter(({ value }) => value !== "not-sure");
+    assert.ok(actions.length >= 2 && actions.length <= 4);
+    assert.ok(actions.every(({ contextSignals }) => contextSignals.some((signal) => signal.startsWith("approach:"))), `${question.id} identifies the selected first-action approach`);
+  }
   const all = [...CORE_QUESTIONS, ...Object.values(STAGE_QUESTION_BANK).flat()];
   assert.equal(all.length, 46);
   assert.equal(new Set(all.map(({ id }) => id)).size, 46);
