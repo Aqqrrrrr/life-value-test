@@ -125,12 +125,52 @@ test("response contexts retain selected core review and strength signals with ex
   assert.deepEqual(contexts.core[0], {
     questionId: "core-safety-1", group: "core", areaId: "safety-home", stageId: null,
     optionValue: "ask-driver", contextSignals: ["transport:driving", "approach:support"],
-    reviewSignals: ["review:seat-belt"], strengthSignals: [], uncertain: false,
+    reviewSignals: [], strengthSignals: ["strength:seat-belt"], uncertain: false,
   });
   input.answers["core-safety-1"] = "adjust-belt";
   const safe = assessment.deriveResponseContexts(assessment.createAssessmentSnapshot(input)).core[0];
   assert.deepEqual(safe.reviewSignals, []);
   assert.deepEqual(safe.strengthSignals, ["strength:seat-belt"]);
+});
+
+test("protective first actions can produce a pure strength response in every life area", () => {
+  const input = inputWith();
+  const cases = [
+    ["core-safety-1", "ask-driver", "safety-home", "strength:seat-belt"],
+    ["core-health-3", "ask-pharmacist", "health-sleep-care", "strength:medication-check"],
+    ["core-money-2", "compare-total", "money-protection", "strength:borrowing-cost"],
+    ["core-time-1", "confirm-priority", "time-work-energy", "strength:task-capacity"],
+    ["core-relationships-1", "offer-part", "relationships-boundaries", "strength:request-boundary"],
+    ["core-information-2", "request-copy", "information-rights", "strength:contract-terms"],
+  ];
+  for (const [id, value] of cases) input.answers[id] = value;
+  const { core } = assessment.deriveResponseContexts(assessment.createAssessmentSnapshot(input));
+  for (const [questionId, optionValue, areaId, signal] of cases) {
+    const response = core.find((context) => context.questionId === questionId);
+    assert.equal(response.areaId, areaId);
+    assert.equal(response.optionValue, optionValue);
+    assert.equal(response.uncertain, false);
+    assert.deepEqual(response.reviewSignals, []);
+    assert.deepEqual(response.strengthSignals, [signal]);
+  }
+});
+
+test("deferred fee checks, bounded budgets and uncertainty retain distinct review, mixed and empty signals", () => {
+  const input = inputWith();
+  for (const [optionValue, reviews, strengths, uncertain] of [
+    ["monthly-first", ["review:borrowing-cost"], [], false],
+    ["check-budget", ["review:borrowing-cost"], ["strength:spending-boundary"], false],
+    ["not-sure", [], [], true],
+  ]) {
+    input.answers["core-money-2"] = optionValue;
+    const { core } = assessment.deriveResponseContexts(assessment.createAssessmentSnapshot(input));
+    const response = core.find(({ questionId }) => questionId === "core-money-2");
+    assert.deepEqual(response.reviewSignals, reviews);
+    assert.deepEqual(response.strengthSignals, strengths);
+    assert.equal(response.uncertain, uncertain);
+    assert.deepEqual(core[0].reviewSignals, []);
+    assert.deepEqual(core[0].strengthSignals, ["strength:seat-belt"]);
+  }
 });
 
 test("resource-limited core scenes accept alternative first actions without treating them as completion states", () => {

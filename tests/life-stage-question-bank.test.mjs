@@ -73,6 +73,11 @@ test("scenario questions cover six areas and keep uncertainty separate from sele
     const actions = question.options.filter(({ value }) => value !== "not-sure");
     assert.ok(actions.length >= 2 && actions.length <= 4);
     assert.ok(actions.every(({ contextSignals }) => contextSignals.some((signal) => signal.startsWith("approach:"))), `${question.id} identifies the selected first-action approach`);
+    for (const option of actions) {
+      assert.ok(Array.isArray(option.reviewSignals), `${question.id}/${option.value} has an explicit review classification`);
+      assert.ok(Array.isArray(option.strengthSignals), `${question.id}/${option.value} has an explicit strength classification`);
+      assert.ok(option.reviewSignals.length + option.strengthSignals.length > 0);
+    }
   }
   const all = [...CORE_QUESTIONS, ...Object.values(STAGE_QUESTION_BANK).flat()];
   assert.equal(all.length, 46);
