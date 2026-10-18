@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "人生性价比决策风格测试",
+  title: "生活选择自我测评 | 人生性价比",
   description: "用成本、收益和证据复盘你的生活选择。",
   other: {
     "codex-preview": "development",

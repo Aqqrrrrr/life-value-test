@@ -46,6 +46,16 @@ function render(props = {}, overrides = {}) {
 }
 const actionIds = (html) => [...html.matchAll(/data-priority-review="([^"]+)"/g)].map((match) => match[1]);
 
+test("public landing page and document title describe life choices without promising a personality or score", () => {
+  const { default: Home } = loadTs("app/page.tsx");
+  const { metadata } = loadTs("app/layout.tsx", { "./globals.css": {} });
+  const html = renderToStaticMarkup(React.createElement(Home));
+  assert.match(html, /生活选择自我测评/);
+  assert.match(metadata.title, /生活选择自我测评/);
+  assert.doesNotMatch(`${html} ${metadata.title} ${metadata.description}`, /决策风格|人格类型|总分/);
+  assert.match(html, /href="\/test"/);
+});
+
 test("missing, malformed and legacy v3 snapshots require retest without invented results", () => {
   const legacyV3 = JSON.stringify({ version: 3, completedAt: "2026-10-18T00:00:00Z", lifeStages: ["stable-work"], priorityStage: null, answers: {} });
   for (const rawSnapshot of [null, "{", '{"answers":{"1":"A"}}', legacyV3]) {
