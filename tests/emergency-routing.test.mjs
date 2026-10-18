@@ -144,7 +144,7 @@ test("voluntary help routes show direct assistance without normal answers or per
     const page = loadTestPage();
     click(page, "稳定工作");
     click(page, "开始测评");
-    click(page, "比较像我");
+    click(page, "我没遇过 / 目前不确定");
     click(page, "需要紧急协助");
     click(page, option.label);
     assert.match(page.html(), /role="alert"/);
@@ -155,7 +155,7 @@ test("voluntary help routes show direct assistance without normal answers or per
     assert.equal(page.snapshots.length, 0);
     click(page, "返回测评");
     assert.match(page.html(), /1 \/ 22/);
-    assert.equal(findButton(page.render(), "比较像我").props["aria-pressed"], true);
+    assert.equal(findButton(page.render(), "我没遇过 / 目前不确定").props["aria-pressed"], true);
     assert.equal(findButton(page.render(), "下一步").props.disabled, false);
   }
   assert.deepEqual(writes, []);

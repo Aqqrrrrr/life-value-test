@@ -2,226 +2,280 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as catalogModule from "../lib/guide-action-catalog.mjs";
 import { createAssessmentSnapshot } from "../lib/life-value-assessment.mjs";
-import { LIFE_STAGES, STAGE_QUESTION_BANK, buildQuestionSet } from "../lib/life-stage-question-bank.mjs";
+import { LIFE_AREAS, LIFE_STAGES, CORE_QUESTIONS, STAGE_QUESTION_BANK, buildQuestionSet } from "../lib/life-stage-question-bank.mjs";
 
-const { ACTION_CATALOG, GUIDE_SOURCE_REVISION, actionPresentationFor, selectActions } = catalogModule;
+const { ACTION_CATALOG, GUIDE_SOURCE_REVISION, actionPresentationFor } = catalogModule;
 const revision = "20718eeab32cb8506971fb71b03e66a91077be07";
-const lensIds = ["safety-health", "time-energy", "money-rights"];
-const snapshotFor = (lifeStages, overrides = {}, priorityStage = null) => createAssessmentSnapshot({
+const snapshotFor = (overrides = {}, lifeStages = ["studying-graduating"], priorityStage = null) => createAssessmentSnapshot({
   lifeStages, priorityStage,
-  answers: Object.fromEntries(buildQuestionSet(lifeStages).map((question) => [
-    question.id, overrides[question.id] ?? (question.input === "likert" ? 3 : "prefer-not-to-say"),
-  ])),
+  answers: Object.fromEntries(buildQuestionSet(lifeStages).map(({ id }) => [id, overrides[id] ?? "not-sure"])),
 });
-const recommend = (...args) => {
-  assert.equal(typeof catalogModule.selectRecommendations, "function", "v3 recommendation selector is available");
-  return catalogModule.selectRecommendations(...args);
+const select = (...args) => {
+  assert.equal(typeof catalogModule.selectPriorityReviews, "function", "v4 priority review selector is available");
+  return catalogModule.selectPriorityReviews(...args);
 };
 const candidate = (id, overrides = {}) => ({
-  id, chapter: "第15节第3条", title: "中介不得代收代付租金和押金，钱直接给房东",
-  sourceUrl: "https://github.com/eternity4719/HowToLiveBetter/blob/" + revision + "/book/15-%E7%A7%9F%E6%88%BF%E4%B8%8E%E4%B9%B0%E6%88%BF.md#L22-L29",
-  lens: "money-rights", benefit: "减少租金和押金经中介转手带来的风险",
-  costs: { money: "0", time: "少", willpower: "些" }, ratioTier: "高", evidenceGrade: "A",
-  firstStep: "付款前核对收款人", stageIds: ["studying-graduating"],
-  signalRequirements: ["housing:renting"], status: "ready", caveats: [], ...overrides,
+  id, chapter: "第5节第7条", title: "核对贷款年化利率", sourceRevision: revision,
+  sourceUrl: `https://github.com/eternity4719/HowToLiveBetter/blob/${revision}/book/05-%E4%B8%8D%E8%A6%81%E6%B5%AA%E8%B4%B9%E9%92%B1.md#L75-L82`,
+  originalSources: ["https://www.gov.cn/zhengce/zhengceku/2021-03/31/content_5597156.htm"],
+  areaIds: ["money-protection"], priority: "resource-protection", benefit: "比较借款总成本", benefitLens: "金钱", benefitMagnitude: "中",
+  costs: { money: "0", time: "少", willpower: "些" }, ratioTier: "一般", evidenceGrade: "C",
+  firstStep: "签约前索取包含相关费用的年化利率", applicability: ["正在比较消费分期"],
+  triggers: [{ questionId: "core-money-2", reviewSignals: ["review:borrowing-cost"], contextSignals: ["money:borrowing"] }],
+  status: "ready", caveats: ["以自己合同上的利率和费用为准"], ...overrides,
 });
 
-test("curated rows retain pinned complete sources, verified costs/evidence and valid stage signals", () => {
-  assert.equal(GUIDE_SOURCE_REVISION, revision);
-  assert.deepEqual(new Set(ACTION_CATALOG.map(({ lens }) => lens)), new Set(lensIds));
-  const stageIds = new Set(LIFE_STAGES.map(({ id }) => id));
-  const signals = new Set(Object.values(STAGE_QUESTION_BANK).flat().flatMap(({ options }) => options.flatMap((option) => option.signals)));
-  // Hand-checked complete entries, not values computed by the production catalog.
-  const verified = {
-    seatbelt: ["第1节第1条", "#L20-L27", "0", "少", "否", "极高", "A"],
-    "riding-helmet": ["第1节第2条", "#L28-L35", "少", "少", "否", "高", "A"],
-    "child-car-seat": ["第1节第10条", "#L94-L101", "多", "少", "否", "高", "A"],
-    "elder-fall-prevention": ["第1节第13条", "#L119-L127", "少", "多", "是", "一般", "A"],
-    "smoke-alarm": ["第1节第3条", "#L36-L43", "少", "少", "否", "高", "B"],
-    "child-window-guards": ["第1节第11条", "#L102-L110", "少", "少", "否", "高", "B"],
-    "implementation-intention": ["第4节第1条", "#L6-L13", "0", "少", "否", "极高", "A"],
-    "exit-conditions": ["第4节第2条", "#L14-L21", "0", "少", "些", "高", "B"],
-    "reduce-meetings": ["第4节第6条", "#L47-L54", "0", "少", "些", "高", "B"],
-    "renter-payment": ["第15节第3条", "#L22-L29", "0", "少", "些", "高", "A"],
-    "renter-deposit": ["第15节第1条", "#L6-L13", "0", "少", "些", "一般", "A"],
-  };
-  assert.equal(ACTION_CATALOG.length, Object.keys(verified).length);
-  assert.equal(new Set(ACTION_CATALOG.map(({ id }) => id)).size, ACTION_CATALOG.length);
-  for (const action of ACTION_CATALOG) {
-    assert.ok(action.id && action.chapter && action.title && action.benefit && action.firstStep);
-    assert.ok(action.sourceUrl.startsWith("https://github.com/eternity4719/HowToLiveBetter/blob/" + revision + "/book/"));
-    const [chapter, anchor, money, time, willpower, ratioTier, evidenceGrade] = verified[action.id];
-    assert.equal(action.chapter, chapter);
-    assert.ok(action.sourceUrl.endsWith(anchor));
-    assert.deepEqual(action.costs, { money, time, willpower });
-    assert.equal(action.ratioTier, ratioTier);
-    assert.equal(action.evidenceGrade, evidenceGrade);
-    assert.ok(["ready", "controversial", "manual-review", "todo"].includes(action.status));
-    assert.ok(Array.isArray(action.caveats));
-    assert.ok(Array.isArray(action.stageIds) && action.stageIds.length > 0);
-    assert.ok(action.stageIds.every((id) => stageIds.has(id)));
-    assert.ok(Array.isArray(action.signalRequirements));
-    assert.ok(action.signalRequirements.every((signal) => signals.has(signal)));
-    if (["ready", "controversial"].includes(action.status)) assert.ok(action.signalRequirements.length > 0);
+test("real question-bank answers can reach a source-backed review card in all six areas", () => {
+  const reached = new Set();
+  for (const question of [...CORE_QUESTIONS, ...Object.values(STAGE_QUESTION_BANK).flat()]) {
+    for (const option of question.options) {
+      const result = select(snapshotFor({ [question.id]: option.value }, [question.stage ?? "studying-graduating"]));
+      assert.ok(result.cards.length <= 3);
+      if (option.value === "not-sure" || !(option.reviewSignals?.length)) {
+        assert.deepEqual(result.cards, [], `${question.id}/${option.value} cannot invent a deficit`);
+        continue;
+      }
+      for (const card of result.cards) {
+        assert.deepEqual(card.matchedResponseIds, [question.id]);
+        assert.deepEqual(card.areaIds, [question.areaId]);
+        assert.ok(["ready", "controversial"].includes(card.action.status));
+        assert.equal(card.action.sourceRevision, revision);
+        assert.ok(["review", "mixed"].includes(result.map.find(({ areaId }) => areaId === question.areaId).state));
+        reached.add(question.areaId);
+      }
+    }
+  }
+  assert.deepEqual([...reached].sort(), ["safety-home", "health-sleep-care", "money-protection", "time-work-energy", "relationships-boundaries", "information-rights"].sort());
+});
+
+test("a stage response alone can change an uncertain map into an indicated review", () => {
+  const reached = [];
+  for (const { id: stageId } of LIFE_STAGES) {
+    const baseline = select(snapshotFor({}, [stageId]));
+    assert.deepEqual(baseline.cards, []);
+    assert.ok(baseline.map.every(({ state }) => state === "insufficient"));
+    for (const question of STAGE_QUESTION_BANK[stageId]) {
+      for (const option of question.options) {
+        const result = select(snapshotFor({ [question.id]: option.value }, [stageId]));
+        if (result.cards.length) reached.push({ question, result });
+      }
+    }
+  }
+  assert.ok(reached.length > 0, "stage-only answers must affect map and action cards");
+  for (const { question, result } of reached) {
+    assert.ok(["review", "mixed"].includes(result.map.find(({ areaId }) => areaId === question.areaId).state));
+    assert.ok(result.cards.every(({ matchedResponseIds }) => matchedResponseIds.length === 1 && matchedResponseIds[0] === question.id));
   }
 });
 
-test("v3 recommendations expose independent lenses and only selected stage keys", () => {
-  const result = recommend(snapshotFor(["stable-work", "living-alone"], {
-    "stable-work-work-boundaries": "priority", "living-alone-home-safety": "alarms",
-  }));
-  assert.deepEqual(Object.keys(result), ["lenses", "stages"]);
-  assert.deepEqual(Object.keys(result.lenses), lensIds);
-  assert.deepEqual(Object.keys(result.stages), ["stable-work", "living-alone"]);
-  assert.equal(result.lenses["time-energy"].id, "implementation-intention");
-  assert.equal(result.lenses["safety-health"].id, "smoke-alarm");
-  assert.equal(result.lenses["money-rights"], null);
-});
-
-test("all required signals and a selected mapped stage must match", () => {
-  const row = candidate("renter", { signalRequirements: ["housing:renting", "approach:verify"] });
-  assert.equal(recommend(snapshotFor(["studying-graduating"], { "studying-graduating-rent-move": "budget" }), [row]).lenses["money-rights"], null);
-  const found = recommend(snapshotFor(["studying-graduating"], { "studying-graduating-rent-move": "terms" }), [row]).lenses["money-rights"];
-  assert.equal(found.id, "renter");
-  assert.deepEqual(found.matchedSignals, ["housing:renting", "approach:verify"]);
-  assert.deepEqual(found.matchedStageIds, ["studying-graduating"]);
-  assert.equal(recommend(snapshotFor(["stable-work"]), [row]).lenses["money-rights"], null);
-});
-
-test("ratio then evidence then signal fit are compared only within a lens", () => {
-  const snapshot = snapshotFor(["studying-graduating"], { "studying-graduating-rent-move": "terms" });
-  const rows = [
-    candidate("evidence-a"), candidate("tier-high-c", { ratioTier: "极高", evidenceGrade: "C" }),
-    candidate("tier-high-b", { ratioTier: "极高", evidenceGrade: "B" }),
-    candidate("specific", { ratioTier: "极高", evidenceGrade: "B", signalRequirements: ["housing:renting", "approach:verify"] }),
-    candidate("safety", { lens: "safety-health", ratioTier: "一般" }),
-    candidate("time", { lens: "time-energy", ratioTier: "一般" }),
+test("specific deferred actions reach the relevant card while checking and protecting stay strengths", () => {
+  const cases = [
+    ["core-health-1", "finish-tonight", "reduce-task", "health-sleep-care", "sleep-recovery"],
+    ["core-time-2", "wait-for-block", "find-material", "time-work-energy", "implementation-intention"],
+    ["core-relationships-1", "accept-first", "offer-part", "relationships-boundaries", "relationship-boundaries"],
+    ["core-information-2", "sign-first", "request-copy", "information-rights", "read-before-signing"],
+    ["core-money-2", "monthly-first", "compare-total", "money-protection", "borrowing-apr"],
+    ["partner-parenting-home-child-safety", "screen-first", "check-guards", "safety-home", "child-window-guards"],
   ];
-  const { lenses } = recommend(snapshot, rows);
-  assert.deepEqual(Object.keys(lenses), lensIds);
-  assert.equal(lenses["money-rights"].id, "specific");
-  assert.equal(lenses["safety-health"].id, "safety");
-  assert.equal(lenses["time-energy"].id, "time");
+  for (const [questionId, deferred, protective, areaId, actionId] of cases) {
+    const question = buildQuestionSet(["partner-parenting"]).find(({ id }) => id === questionId);
+    assert.ok(question.options.some(({ value }) => value === deferred), `${questionId} has a real deferred-action choice`);
+    const review = select(snapshotFor({ [questionId]: deferred }, ["partner-parenting"]));
+    assert.equal(review.map.find((area) => area.areaId === areaId).state, "review");
+    assert.deepEqual(review.cards.map(({ action }) => action.id), [actionId]);
+    assert.deepEqual(review.cards[0].matchedResponseIds, [questionId]);
+    const strength = select(snapshotFor({ [questionId]: protective }, ["partner-parenting"]));
+    assert.equal(strength.map.find((area) => area.areaId === areaId).state, "strength");
+    assert.deepEqual(strength.cards, []);
+  }
 });
 
-test("stage sections cap at two and deduplicate IDs while merging applicability", () => {
-  const snapshot = snapshotFor(["studying-graduating", "career-start", "living-alone"], {
-    "studying-graduating-rent-move": "terms", "living-alone-home-safety": "devices",
-  });
-  const shared = candidate("shared", {
-    stageIds: ["studying-graduating", "career-start", "living-alone"], signalRequirements: ["approach:verify"],
-  });
-  const rows = [shared, { ...shared }, candidate("second"), candidate("third"), candidate("alone", {
-    stageIds: ["living-alone"], signalRequirements: ["focus:home-safety"],
-  })];
-  const result = recommend(snapshot, rows);
-  assert.deepEqual(result.stages["studying-graduating"].map(({ id }) => id), ["shared", "second"]);
-  assert.deepEqual(result.stages["living-alone"].map(({ id }) => id), ["alone"]);
-  assert.deepEqual(result.stages["career-start"], []);
-  assert.deepEqual(result.stages["studying-graduating"][0].matchedStageIds, ["studying-graduating", "living-alone"]);
-  const actions = Object.values(result.stages).flat();
-  assert.equal(new Set(actions.map(({ id }) => id)).size, actions.length);
-  assert.ok(Object.values(result.stages).every((actions) => actions.length <= 2));
+test("simultaneous real reviews retain one card per priority and never fill beyond three", () => {
+  const answers = {
+    "core-health-1": "finish-tonight", "core-time-2": "wait-for-block",
+    "core-relationships-1": "accept-first", "core-information-2": "sign-first",
+    "core-money-2": "monthly-first", "partner-parenting-home-child-safety": "screen-first",
+  };
+  for (const question of buildQuestionSet(["partner-parenting"])) {
+    if (answers[question.id]) assert.ok(question.options.some(({ value }) => value === answers[question.id]));
+  }
+  const result = select(snapshotFor(answers, ["partner-parenting"]));
+  assert.deepEqual(result.cards.map(({ priority, action }) => [priority, action.id]), [
+    ["downside-risk", "child-window-guards"],
+    ["resource-protection", "implementation-intention"],
+    ["information-support", "read-before-signing"],
+  ]);
+  assert.ok(result.map.every(({ state }) => state === "review"));
 });
 
-test("a disclosed planning signal cannot qualify a wholly withheld selected stage", () => {
-  const result = recommend(snapshotFor(["career-start", "living-alone"], {
-    "living-alone-emergency-plan": "info",
-  }));
-  assert.deepEqual(result.stages["career-start"], []);
-  assert.deepEqual(result.stages["living-alone"].map(({ id }) => id), ["implementation-intention"]);
-  assert.deepEqual(result.lenses["time-energy"].matchedStageIds, ["living-alone"]);
+test("every curated candidate preserves its audited complete entry and source limitations", () => {
+  assert.equal(GUIDE_SOURCE_REVISION, revision);
+  // Hand-checked full entries at the fixed revision, including the final 备注.
+  const verified = {
+    seatbelt: ["第1节第1条", "#L23-L30", "0", "少", "否", "极高", "A", "死亡率", "大"],
+    "riding-helmet": ["第1节第2条", "#L32-L39", "少", "少", "否", "高", "A", "死亡率", "大"],
+    "child-car-seat": ["第1节第10条", "#L104-L111", "多", "少", "否", "高", "A", "死亡率", "大"],
+    "elder-fall-prevention": ["第1节第13条", "#L131-L138", "少", "多", "是", "一般", "A", "死亡率", "大"],
+    "smoke-alarm": ["第1节第3条", "#L41-L48", "少", "少", "否", "高", "B", "死亡率", "大"],
+    "child-window-guards": ["第1节第11条", "#L113-L120", "少", "少", "否", "高", "B", "死亡率", "大"],
+    "implementation-intention": ["第4节第1条", "#L7-L14", "0", "少", "否", "极高", "A", "时间", "大"],
+    "exit-conditions": ["第4节第2条", "#L16-L23", "0", "少", "些", "高", "B", "时间", "大"],
+    "reduce-meetings": ["第4节第6条", "#L52-L59", "0", "少", "些", "高", "B", "时间", "大"],
+    "renter-payment": ["第15节第3条", "#L25-L32", "0", "少", "些", "高", "A", "金钱", "大"],
+    "renter-deposit": ["第15节第1条", "#L7-L14", "0", "少", "些", "一般", "A", "金钱", "中"],
+    "sleep-recovery": ["第3节第3条", "#L37-L44", "0", "多", "些", "一般", "A", "时间", "大"],
+    "relationship-boundaries": ["第3节第16条", "#L154-L161", "0", "少", "是", "一般", "C", "时间", "中"],
+    "borrowing-apr": ["第5节第7条", "#L75-L82", "0", "少", "些", "一般", "C", "金钱", "中"],
+    "read-before-signing": ["第8节第17条", "#L169-L176", "0", "少", "些", "高", "A", "金钱", "大"],
+  };
+  assert.equal(ACTION_CATALOG.length, Object.keys(verified).length);
+  assert.equal(new Set(ACTION_CATALOG.map(({ id }) => id)).size, ACTION_CATALOG.length);
+  const questionIds = new Set([...CORE_QUESTIONS, ...Object.values(STAGE_QUESTION_BANK).flat()].map(({ id }) => id));
+  for (const action of ACTION_CATALOG) {
+    const [chapter, anchor, money, time, willpower, ratio, evidence, lens, magnitude] = verified[action.id];
+    assert.equal(action.chapter, chapter);
+    assert.equal(action.sourceRevision, revision);
+    assert.ok(action.sourceUrl.startsWith(`https://github.com/eternity4719/HowToLiveBetter/blob/${revision}/book/`));
+    assert.ok(action.sourceUrl.endsWith(anchor));
+    assert.deepEqual(action.costs, { money, time, willpower });
+    assert.equal(action.ratioTier, ratio);
+    assert.equal(action.evidenceGrade, evidence);
+    assert.equal(action.benefitLens, lens);
+    assert.equal(action.benefitMagnitude, magnitude);
+    for (const field of ["title", "benefit", "firstStep"]) assert.ok(action[field]?.length > 0);
+    for (const field of ["originalSources", "applicability", "caveats", "triggers", "areaIds"]) assert.ok(action[field]?.length > 0);
+    assert.ok(action.originalSources.every((url) => /^https?:\/\//.test(url)));
+    assert.ok(["ready", "controversial", "manual-review", "todo"].includes(action.status));
+    assert.ok(action.areaIds.every((id) => LIFE_AREAS.some((area) => area.id === id)));
+    assert.ok(action.triggers.every((trigger) => questionIds.has(trigger.questionId) && trigger.reviewSignals.length > 0));
+  }
+  for (const { id } of LIFE_AREAS) assert.ok(ACTION_CATALOG.some((row) => row.areaIds.includes(id) && ["ready", "controversial"].includes(row.status)));
 });
 
-test("exit conditions require experiment disclosure from the transition-plan question itself", () => {
-  const exitConditions = ACTION_CATALOG.find(({ id }) => id === "exit-conditions");
-  const unrelated = recommend(snapshotFor(["career-change", "career-start"], {
-    "career-change-transition-plan": "routine",
-    "career-change-information-check": "fit",
-    "career-start-career-experiment": "task",
-  }), [exitConditions]);
-  assert.equal(unrelated.lenses["time-energy"], null);
-  assert.deepEqual(unrelated.stages["career-change"], []);
-  const qualified = recommend(snapshotFor(["career-change"], {
-    "career-change-transition-plan": "experiments",
-  }), [exitConditions]);
-  assert.equal(qualified.lenses["time-energy"].id, "exit-conditions");
-  assert.deepEqual(qualified.lenses["time-energy"].matchedStageIds, ["career-change"]);
+test("uncertainty produces six insufficient areas and no filler cards", () => {
+  const result = select(snapshotFor());
+  assert.deepEqual(Object.keys(result), ["map", "cards"]);
+  assert.deepEqual(result.map.map(({ areaId, state }) => [areaId, state]), [
+    ["safety-home", "insufficient"], ["health-sleep-care", "insufficient"], ["money-protection", "insufficient"],
+    ["time-work-energy", "insufficient"], ["relationships-boundaries", "insufficient"], ["information-rights", "insufficient"],
+  ]);
+  assert.deepEqual(result.cards, []);
+  assert.ok(result.map.every((entry) => !Object.hasOwn(entry, "score")));
 });
 
-test("requirements cannot be assembled from unrelated answers within one stage", () => {
-  const row = candidate("verified-renter", { signalRequirements: ["housing:renting", "approach:verify"] });
-  const result = recommend(snapshotFor(["studying-graduating"], {
-    "studying-graduating-rent-move": "budget", "studying-graduating-job-choice": "compare",
-  }), [row]);
-  assert.equal(result.lenses["money-rights"], null);
-  assert.deepEqual(result.stages["studying-graduating"], []);
+test("map distinguishes strength, review and mixed without converting protection into a problem", () => {
+  const state = (answers) => select(snapshotFor(answers)).map.find(({ areaId }) => areaId === "money-protection").state;
+  assert.equal(state({ "core-money-2": "compare-total" }), "strength");
+  assert.equal(state({ "core-money-2": "monthly-first" }), "review");
+  assert.equal(state({ "core-money-2": "check-budget" }), "mixed");
+  assert.equal(state({ "core-money-1": "list-essentials", "core-money-2": "monthly-first" }), "mixed");
+  assert.deepEqual(select(snapshotFor({ "core-safety-1": "adjust-belt" })).cards, []);
 });
 
-test("stage cap never uses another lens's ratio as a cross-lens rank", () => {
-  const snapshot = snapshotFor(["studying-graduating"], { "studying-graduating-rent-move": "terms" });
-  const rows = [candidate("safety", { lens: "safety-health", ratioTier: "一般" }), candidate("time", { lens: "time-energy", ratioTier: "一般" }), candidate("money", { ratioTier: "极高" })];
-  const before = recommend(snapshot, rows);
-  const after = recommend(snapshot, rows.map((row) => ({ ...row, ratioTier: row.lens === "money-rights" ? "一般" : "极高" })));
-  assert.deepEqual(before.stages["studying-graduating"].map(({ id }) => id), after.stages["studying-graduating"].map(({ id }) => id));
+test("a stage topic or approach alone cannot qualify a review or infer a deficit", () => {
+  const result = select(snapshotFor({ "living-alone-home-safety": "alarms", "living-alone-emergency-plan": "info" }, ["living-alone"]));
+  assert.equal(result.map.find(({ areaId }) => areaId === "safety-home").state, "insufficient");
+  assert.deepEqual(result.cards, []);
 });
 
-test("todo and manual-review rows never recommend and controversy retains its caveats", () => {
-  const snapshot = snapshotFor(["studying-graduating"], { "studying-graduating-rent-move": "terms" });
-  const rows = [candidate("todo", { status: "todo", ratioTier: "极高" }), candidate("manual", { status: "manual-review", ratioTier: "极高" })];
-  assert.deepEqual(recommend(snapshot, rows).stages["studying-graduating"], []);
-  assert.equal(recommend(snapshot, rows).lenses["money-rights"], null);
-  const disputed = candidate("disputed", { status: "controversial", caveats: ["该效果存在争议"] });
-  const result = recommend(snapshot, [...rows, disputed]);
-  assert.equal(result.lenses["money-rights"].status, "controversial");
-  assert.deepEqual(result.stages["studying-graduating"][0].caveats, ["该效果存在争议"]);
-  const meeting = recommend(snapshotFor(["stable-work"], { "stable-work-work-boundaries": "scope" })).lenses["time-energy"];
-  assert.equal(meeting.id, "reduce-meetings");
-  assert.equal(meeting.status, "controversial");
-  assert.ok(meeting.caveats.some((caveat) => caveat.includes("争议")));
+test("the real borrowing review card names only the response that supplies its review signal", () => {
+  const result = select(snapshotFor({ "core-money-2": "monthly-first" }));
+  assert.equal(result.cards.length, 1);
+  assert.equal(result.cards[0].action.id, "borrowing-apr");
+  assert.equal(result.cards[0].priority, "resource-protection");
+  assert.deepEqual(result.cards[0].matchedResponseIds, ["core-money-2"]);
+  assert.deepEqual(result.cards[0].areaIds, ["money-protection"]);
 });
 
-test("non-disclosure and unsupported contexts produce explicit empty sections", () => {
-  const hidden = recommend(snapshotFor(["career-start", "elder-family-care"]));
-  assert.deepEqual(hidden, { lenses: { "safety-health": null, "time-energy": null, "money-rights": null }, stages: { "career-start": [], "elder-family-care": [] } });
-  const unmatched = recommend(snapshotFor(["career-start"], { "career-start-employment-rights": "pay" }));
-  assert.deepEqual(unmatched.stages["career-start"], []);
-  assert.equal(unmatched.lenses["money-rights"], null);
-  const childSeat = ACTION_CATALOG.find(({ id }) => id === "child-car-seat");
-  const child = recommend(snapshotFor(["partner-parenting"], { "partner-parenting-home-child-safety": "child-travel" }), [childSeat]);
-  assert.equal(child.lenses["safety-health"], null);
-  assert.deepEqual(child.stages["partner-parenting"], []);
+test("required signals cannot be assembled from different questions or selected stages", () => {
+  const snapshot = snapshotFor({ "core-money-2": "monthly-first", "core-money-1": "list-essentials", "studying-graduating-rent-move": "terms" });
+  const rows = [
+    candidate("other-core", { triggers: [{ questionId: "core-money-2", reviewSignals: ["review:borrowing-cost"], contextSignals: ["resource:money"] }] }),
+    candidate("other-stage", { triggers: [{ questionId: "core-money-2", reviewSignals: ["review:borrowing-cost"], contextSignals: ["housing:renting"] }] }),
+    candidate("wrong-question", { triggers: [{ questionId: "core-money-1", reviewSignals: ["review:borrowing-cost"] }] }),
+    candidate("missing-review", { triggers: [{ questionId: "core-money-2", reviewSignals: ["review:borrowing-cost", "review:contract-terms"] }] }),
+  ];
+  assert.deepEqual(select(snapshot, rows).cards, []);
 });
 
-test("priority and selection click order cannot change recommendation selection", () => {
-  const overrides = { "stable-work-work-boundaries": "priority", "living-alone-home-safety": "alarms" };
-  const base = recommend(snapshotFor(["stable-work", "living-alone"], overrides));
-  assert.deepEqual(recommend(snapshotFor(["living-alone", "stable-work"], overrides, "living-alone")), base);
-  assert.deepEqual(recommend(snapshotFor(["stable-work", "living-alone"], overrides, "stable-work")), base);
+test("OR triggers cannot splice the review from one branch with context from another", () => {
+  const row = candidate("split", { triggers: [
+    { questionId: "core-money-2", reviewSignals: ["review:borrowing-cost"], contextSignals: ["housing:renting"] },
+    { questionId: "studying-graduating-rent-move", reviewSignals: ["review:borrowing-cost"], contextSignals: ["housing:renting"] },
+  ] });
+  assert.deepEqual(select(snapshotFor({ "core-money-2": "monthly-first", "studying-graduating-rent-move": "terms" }), [row]).cards, []);
 });
 
-test("legacy or malformed snapshots and invalid catalog metadata cannot create recommendations", () => {
-  const empty = { lenses: { "safety-health": null, "time-energy": null, "money-rights": null }, stages: {} };
-  for (const value of [null, {}, { version: 2, context: { residence: "renting" } }, { version: 3, lifeStages: [], answers: {} }]) assert.deepEqual(recommend(value), empty);
-  const snapshot = snapshotFor(["studying-graduating"], { "studying-graduating-rent-move": "terms" });
-  const rows = [candidate("missing", { signalRequirements: undefined }), candidate("invalid", { signalRequirements: ["unknown"] }), candidate("wrong-stage", { stageIds: ["new-worker"] })];
-  assert.equal(recommend(snapshot, rows).lenses["money-rights"], null);
-  assert.deepEqual(recommend(snapshot, rows).stages["studying-graduating"], []);
-  assert.deepEqual(selectActions({ residence: "renting" }), empty.lenses);
+test("each priority selects at most one action using ratio, evidence, then trigger fit", () => {
+  const rows = [candidate("ordinary"), candidate("high-c", { ratioTier: "高" }),
+    candidate("high-a", { ratioTier: "高", evidenceGrade: "A", triggers: [{ questionId: "core-money-2", reviewSignals: ["review:borrowing-cost"] }] }),
+    candidate("specific", { ratioTier: "高", evidenceGrade: "A" }), candidate("risk", { priority: "downside-risk" }), candidate("information", { priority: "information-support" })];
+  const result = select(snapshotFor({ "core-money-2": "monthly-first" }), rows);
+  assert.deepEqual(result.cards.map(({ priority, action }) => [priority, action.id]), [["downside-risk", "risk"], ["resource-protection", "specific"], ["information-support", "information"]]);
+  assert.ok(result.cards.length <= 3);
+  assert.equal(new Set(result.cards.map(({ priority }) => priority)).size, result.cards.length);
+  assert.ok(result.cards.every(({ matchedResponseIds }) => matchedResponseIds.length >= 1));
+  const after = select(snapshotFor({ "core-money-2": "monthly-first" }), rows.map((row) => row.priority === "downside-risk" ? { ...row, ratioTier: "极高" } : row));
+  assert.deepEqual(after.cards.map(({ action }) => action.id), ["risk", "specific", "information"]);
 });
 
-test("v3 compatibility and presentation preserve recommendation identity", () => {
-  const snapshot = snapshotFor(["studying-graduating"], { "studying-graduating-rent-move": "terms" });
-  const recommendation = selectActions(snapshot, [candidate("renter")])["money-rights"];
-  assert.equal(recommendation.id, "renter");
-  const verifying = actionPresentationFor({ profile: { id: "steady-verify" }, dimensions: { lowFriction: 2, collaboration: 2 } }, recommendation);
-  const acting = actionPresentationFor({ profile: { id: "opportunity-act" }, dimensions: { lowFriction: 4, collaboration: 4 } }, recommendation);
-  assert.equal(verifying.action.id, "renter");
-  assert.equal(acting.action.id, "renter");
-  assert.equal(verifying.emphasis.focus, "evidence-conditions");
-  assert.ok(verifying.emphasis.followUpChecklist.length > 0);
-  assert.equal(acting.emphasis.focus, "first-step");
-  assert.match(acting.emphasis.text, /付款前核对收款人/);
-  assert.match(acting.emphasis.supportPrompt, /求助|支持|咨询/);
-  assert.equal(actionPresentationFor({}, null), null);
+test("duplicate IDs and repeated triggers cannot duplicate an action across priorities or stages", () => {
+  const row = candidate("shared");
+  const result = select(snapshotFor({ "core-money-2": "monthly-first", "living-alone-home-safety": "alarms" }, ["studying-graduating", "living-alone"]), [{ ...row, triggers: [...row.triggers, ...row.triggers] }, { ...row }, { ...row, priority: "information-support" }]);
+  assert.equal(result.cards.length, 1);
+  assert.deepEqual(result.cards[0].matchedResponseIds, ["core-money-2"]);
+});
+
+test("todo and manual-review are excluded while controversy keeps its caveats", () => {
+  const snapshot = snapshotFor({ "core-money-2": "monthly-first" });
+  const excluded = [candidate("todo", { status: "todo" }), candidate("manual", { status: "manual-review" })];
+  assert.deepEqual(select(snapshot, excluded).cards, []);
+  const disputed = candidate("disputed", { status: "controversial", caveats: ["争议：该效果没有直接比较研究"] });
+  const review = select(snapshot, [...excluded, disputed]).cards[0];
+  assert.equal(review.action.status, "controversial");
+  assert.deepEqual(actionPresentationFor(review).caveats, ["争议：该效果没有直接比较研究"]);
+});
+
+test("no eligible action leaves a review state visible without a filler", () => {
+  const result = select(snapshotFor({ "core-money-2": "monthly-first" }), []);
+  assert.equal(result.map.find(({ areaId }) => areaId === "money-protection").state, "review");
+  assert.deepEqual(result.cards, []);
+});
+
+test("invalid snapshots and unsafe catalog metadata fail closed", () => {
+  for (const value of [null, {}, { version: 3 }, { version: 4, answers: {} }, 1n]) {
+    const result = select(value);
+    assert.equal(result.map.length, 6);
+    assert.ok(result.map.every(({ state }) => state === "insufficient"));
+    assert.deepEqual(result.cards, []);
+  }
+  const row = candidate("invalid");
+  const invalid = [{ ...row, triggers: [] }, { ...row, triggers: [{ questionId: "core-money-2", reviewSignals: [] }] },
+    { ...row, triggers: [{ questionId: "unknown", reviewSignals: ["review:borrowing-cost"] }] }, { ...row, sourceUrl: "https://example.com/unverified" },
+    { ...row, sourceRevision: "main" }, { ...row, originalSources: [] }, { ...row, applicability: [] }, { ...row, evidenceGrade: "D" },
+    { ...row, areaIds: ["safety-home"] }, { ...row, priority: "ranking" },
+    { ...row, triggers: [{ questionId: "core-money-2", reviewSignals: ["review:borrowing-cost"], contextSignals: "money:borrowing" }] },
+    { ...row, status: "controversial", caveats: [] }];
+  assert.deepEqual(select(snapshotFor({ "core-money-2": "monthly-first" }), invalid).cards, []);
+});
+
+test("stage click order and preferred stage cannot change selection", () => {
+  const overrides = { "core-money-2": "check-budget", "living-alone-home-safety": "alarms" };
+  assert.deepEqual(select(snapshotFor(overrides, ["living-alone", "studying-graduating"], "living-alone")), select(snapshotFor(overrides, ["studying-graduating", "living-alone"], "studying-graduating")));
+});
+
+test("presentation explains only matched card facts without personality emphasis", () => {
+  const review = select(snapshotFor({ "core-money-2": "monthly-first" })).cards[0];
+  const shown = actionPresentationFor(review);
+  assert.equal(shown.action, review.action);
+  assert.match(shown.observation, /从这组处境看/);
+  assert.match(shown.observation, /分期|费用/);
+  assert.ok(shown.ignoredCostOrBenefit.includes(review.action.benefit));
+  assert.equal(shown.firstStep, review.action.firstStep);
+  assert.deepEqual(shown.applicability, review.action.applicability);
+  assert.deepEqual(shown.caveats, review.action.caveats);
+  assert.deepEqual(shown.source, { chapter: "第5节第7条", title: review.action.title, url: review.action.sourceUrl, revision, originalSources: review.action.originalSources });
+  assert.deepEqual(shown.matchedResponseIds, ["core-money-2"]);
+  assert.equal(Object.hasOwn(shown, "emphasis"), false);
+  assert.equal(actionPresentationFor(null), null);
 });

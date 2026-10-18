@@ -17,7 +17,7 @@ test("exports the required question bank API", async () => {
   let bank;
   try { bank = await import(modulePath); } catch { /* Missing implementation is the expected RED state. */ }
   assert.ok(bank, "the static question bank module must exist");
-  for (const key of ["LIFE_STAGES", "CORE_QUESTIONS", "STAGE_QUESTION_BANK", "buildQuestionSet", "questionCountFor"]) {
+  for (const key of ["LIFE_STAGES", "LIFE_AREAS", "ASSESSMENT_CHAPTERS", "CORE_QUESTIONS", "STAGE_QUESTION_BANK", "buildQuestionSet", "questionCountFor"]) {
     assert.ok(bank[key], `${key} must be exported`);
   }
 });
@@ -29,6 +29,7 @@ test("offers seven canonical stages and exactly four category questions per stag
   stageIds.forEach((stage, index) => {
     assert.equal(STAGE_QUESTION_BANK[stage].length, 4);
     assert.deepEqual(STAGE_QUESTION_BANK[stage].map(({ category }) => category), categories[index]);
+    assert.deepEqual(STAGE_QUESTION_BANK[stage].map(({ id }) => id), categories[index].map((category) => `${stage}-${category}`));
     assert.ok(STAGE_QUESTION_BANK[stage].every((question) => question.stage === stage));
   });
 });
@@ -59,8 +60,25 @@ test("rejects invalid selections in both public helpers", async () => {
   }
 });
 
-test("all questions have unique IDs, valid options and isolated core/stage metadata", async () => {
-  const { CORE_QUESTIONS, STAGE_QUESTION_BANK } = await import(modulePath);
+test("scenario questions cover six areas and keep uncertainty separate from selected context", async () => {
+  const { LIFE_AREAS, ASSESSMENT_CHAPTERS, CORE_QUESTIONS, STAGE_QUESTION_BANK } = await import(modulePath);
+  assert.deepEqual(LIFE_AREAS.map(({ id }) => id), [
+    "safety-home", "health-sleep-care", "money-protection",
+    "time-work-energy", "relationships-boundaries", "information-rights",
+  ]);
+  assert.equal(ASSESSMENT_CHAPTERS.length, 3);
+  assert.deepEqual(ASSESSMENT_CHAPTERS.flatMap(({ areaIds }) => areaIds), LIFE_AREAS.map(({ id }) => id));
+  for (const area of LIFE_AREAS) assert.equal(CORE_QUESTIONS.filter(({ areaId }) => areaId === area.id).length, 3);
+  for (const question of CORE_QUESTIONS) {
+    const actions = question.options.filter(({ value }) => value !== "not-sure");
+    assert.ok(actions.length >= 2 && actions.length <= 4);
+    assert.ok(actions.every(({ contextSignals }) => contextSignals.some((signal) => signal.startsWith("approach:"))), `${question.id} identifies the selected first-action approach`);
+    for (const option of actions) {
+      assert.ok(Array.isArray(option.reviewSignals), `${question.id}/${option.value} has an explicit review classification`);
+      assert.ok(Array.isArray(option.strengthSignals), `${question.id}/${option.value} has an explicit strength classification`);
+      assert.ok(option.reviewSignals.length + option.strengthSignals.length > 0);
+    }
+  }
   const all = [...CORE_QUESTIONS, ...Object.values(STAGE_QUESTION_BANK).flat()];
   assert.equal(all.length, 46);
   assert.equal(new Set(all.map(({ id }) => id)).size, 46);
@@ -68,13 +86,14 @@ test("all questions have unique IDs, valid options and isolated core/stage metad
     assert.ok(typeof question.id === "string" && question.id.trim());
     assert.ok(typeof question.prompt === "string" && question.prompt.trim());
     assert.ok(["safety-health", "time-energy", "money-rights"].includes(question.lens));
-    assert.ok(["likert", "single"].includes(question.input));
+    assert.equal(question.input, "single");
+    assert.ok(LIFE_AREAS.some(({ id }) => id === question.areaId));
     assert.ok(question.options.length >= 2);
     assert.equal(new Set(question.options.map(({ value }) => value)).size, question.options.length);
     assert.ok(question.options.every(({ value, label }) => value !== undefined && typeof label === "string" && label.trim()));
     if (question.group === "core") {
       assert.equal(Object.hasOwn(question, "stage"), false);
-      assert.ok(["protection", "evidence", "lowFriction", "collaboration"].includes(question.dimension));
+      assert.equal(Object.hasOwn(question, "dimension"), false);
       assert.equal(Object.hasOwn(question, "signals"), false);
     } else {
       assert.equal(question.group, "stage");
@@ -82,17 +101,18 @@ test("all questions have unique IDs, valid options and isolated core/stage metad
       assert.equal(Object.hasOwn(question, "dimension"), false);
       assert.ok(question.category);
       assert.equal(Object.hasOwn(question, "signals"), false);
-      const optOuts = question.options.filter(({ value }) => value === "prefer-not-to-say");
-      assert.equal(optOuts.length, 1, `${question.id} must allow non-disclosure exactly once`);
-      assert.equal(optOuts[0].label, "暂不说明");
-      for (const option of question.options) {
-        if (option.value === "prefer-not-to-say") {
-          assert.deepEqual(option.signals, []);
-        } else {
-          assert.ok(option.signals.includes(`focus:${question.category}`));
-        }
-        assert.equal(new Set(option.signals).size, option.signals.length);
-        assert.ok(option.signals.every((signal) => typeof signal === "string" && /^[a-z]+:[a-z-]+$/.test(signal)));
+    }
+    assert.equal(question.options.at(-1).value, "not-sure");
+    assert.equal(question.options.at(-1).label, "我没遇过 / 目前不确定");
+    assert.equal(question.options.filter(({ value }) => value === "not-sure").length, 1);
+    for (const option of question.options) {
+      assert.equal(typeof option.value, "string");
+      assert.ok(Array.isArray(option.contextSignals));
+      for (const field of ["contextSignals", "reviewSignals", "strengthSignals"]) {
+        const signals = option[field] ?? [];
+        assert.equal(new Set(signals).size, signals.length);
+        assert.ok(signals.every((signal) => typeof signal === "string" && /^[a-z]+:[a-z-]+$/.test(signal)));
+        if (option.value === "not-sure") assert.deepEqual(signals, []);
       }
     }
     assert.ok(!JSON.stringify(question).match(/self-harm-risk|immediate-danger|ongoing-legal-proceeding|medical-emergency"/));
