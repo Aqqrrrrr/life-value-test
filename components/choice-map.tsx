@@ -23,7 +23,7 @@ export function ChoiceMap({ areas }: { areas: ReturnType<typeof selectPriorityRe
             <h3 id={`area-${areaId}`} className="text-lg font-bold">{label}</h3>
             <p className="mt-3 font-semibold text-[#865334]">{states[state].label}</p>
             <p className="mt-2 text-sm leading-7 text-[#756b62]">{states[state].description}</p>
-            <a href="/test" aria-label={`${label}：重新做这一区域复盘`} className="mt-4 inline-block text-sm text-[#865334] underline underline-offset-4">重新做这一区域复盘</a>
+            <a href="/test" aria-label={`${label}：重新完成测评`} className="mt-4 inline-block text-sm text-[#865334] underline underline-offset-4">重新完成测评</a>
           </article>
         ))}
       </div>

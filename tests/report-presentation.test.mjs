@@ -85,7 +85,7 @@ test("uncertainty leaves six areas insufficient with retest links and no substit
   assert.match(html, /信息不足/);
   assert.match(html, /暂不下结论/);
   assert.deepEqual(actionIds(html), []);
-  assert.equal((html.match(/>重新做这一区域复盘<\/a>/g) ?? []).length, 6);
+  assert.equal((html.match(/>重新完成测评<\/a>/g) ?? []).length, 6);
   assert.ok((html.match(/href="\/test"/g) ?? []).length >= 6);
 });
 test("map preserves protective, mixed and review states as readable text", () => {

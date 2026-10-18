@@ -177,7 +177,7 @@ test("resource-limited core scenes accept alternative first actions without trea
   const cases = [
     ["core-safety-1", ["adjust-belt", "ask-driver", "change-car"]],
     ["core-money-1", ["list-essentials", "ask-payment-date", "pause-expenses"]],
-    ["core-relationships-1", ["clarify-request", "offer-part", "suggest-help"]],
+    ["core-relationships-1", ["clarify-request", "offer-part", "suggest-help", "accept-first"]],
   ];
   for (const [questionId, actions] of cases) {
     const question = CORE_QUESTIONS.find(({ id }) => id === questionId);
@@ -196,7 +196,7 @@ test("resource-limited core scenes accept alternative first actions without trea
 test("two selected stage options never splice their context into a fabricated response", () => {
   assert.equal(typeof assessment.deriveResponseContexts, "function");
   const input = inputWith(["partner-parenting", "living-alone"]);
-  input.answers["partner-parenting-home-child-safety"] = "child-travel";
+  input.answers["partner-parenting-home-child-safety"] = "screen-first";
   input.answers["living-alone-home-safety"] = "devices";
   const { stage } = assessment.deriveResponseContexts(assessment.createAssessmentSnapshot(input));
   assert.deepEqual(stage.find(({ questionId }) => questionId === "living-alone-home-safety"), {
@@ -205,7 +205,9 @@ test("two selected stage options never splice their context into a fabricated re
     reviewSignals: [], strengthSignals: [], uncertain: false,
   });
   assert.deepEqual(stage.find(({ questionId }) => questionId === "partner-parenting-home-child-safety").contextSignals,
-    ["focus:home-child-safety", "care:child", "transport:driving"]);
+    ["focus:home-child-safety", "care:child", "approach:plan"]);
+  assert.deepEqual(stage.find(({ questionId }) => questionId === "partner-parenting-home-child-safety").reviewSignals,
+    ["review:child-window"]);
 });
 
 test("uncertain answers round-trip with empty signals in both response groups", () => {

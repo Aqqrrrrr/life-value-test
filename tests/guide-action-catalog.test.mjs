@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as catalogModule from "../lib/guide-action-catalog.mjs";
 import { createAssessmentSnapshot } from "../lib/life-value-assessment.mjs";
-import { LIFE_AREAS, CORE_QUESTIONS, STAGE_QUESTION_BANK, buildQuestionSet } from "../lib/life-stage-question-bank.mjs";
+import { LIFE_AREAS, LIFE_STAGES, CORE_QUESTIONS, STAGE_QUESTION_BANK, buildQuestionSet } from "../lib/life-stage-question-bank.mjs";
 
 const { ACTION_CATALOG, GUIDE_SOURCE_REVISION, actionPresentationFor } = catalogModule;
 const revision = "20718eeab32cb8506971fb71b03e66a91077be07";
@@ -23,6 +23,89 @@ const candidate = (id, overrides = {}) => ({
   firstStep: "签约前索取包含相关费用的年化利率", applicability: ["正在比较消费分期"],
   triggers: [{ questionId: "core-money-2", reviewSignals: ["review:borrowing-cost"], contextSignals: ["money:borrowing"] }],
   status: "ready", caveats: ["以自己合同上的利率和费用为准"], ...overrides,
+});
+
+test("real question-bank answers can reach a source-backed review card in all six areas", () => {
+  const reached = new Set();
+  for (const question of [...CORE_QUESTIONS, ...Object.values(STAGE_QUESTION_BANK).flat()]) {
+    for (const option of question.options) {
+      const result = select(snapshotFor({ [question.id]: option.value }, [question.stage ?? "studying-graduating"]));
+      assert.ok(result.cards.length <= 3);
+      if (option.value === "not-sure" || !(option.reviewSignals?.length)) {
+        assert.deepEqual(result.cards, [], `${question.id}/${option.value} cannot invent a deficit`);
+        continue;
+      }
+      for (const card of result.cards) {
+        assert.deepEqual(card.matchedResponseIds, [question.id]);
+        assert.deepEqual(card.areaIds, [question.areaId]);
+        assert.ok(["ready", "controversial"].includes(card.action.status));
+        assert.equal(card.action.sourceRevision, revision);
+        assert.ok(["review", "mixed"].includes(result.map.find(({ areaId }) => areaId === question.areaId).state));
+        reached.add(question.areaId);
+      }
+    }
+  }
+  assert.deepEqual([...reached].sort(), ["safety-home", "health-sleep-care", "money-protection", "time-work-energy", "relationships-boundaries", "information-rights"].sort());
+});
+
+test("a stage response alone can change an uncertain map into an indicated review", () => {
+  const reached = [];
+  for (const { id: stageId } of LIFE_STAGES) {
+    const baseline = select(snapshotFor({}, [stageId]));
+    assert.deepEqual(baseline.cards, []);
+    assert.ok(baseline.map.every(({ state }) => state === "insufficient"));
+    for (const question of STAGE_QUESTION_BANK[stageId]) {
+      for (const option of question.options) {
+        const result = select(snapshotFor({ [question.id]: option.value }, [stageId]));
+        if (result.cards.length) reached.push({ question, result });
+      }
+    }
+  }
+  assert.ok(reached.length > 0, "stage-only answers must affect map and action cards");
+  for (const { question, result } of reached) {
+    assert.ok(["review", "mixed"].includes(result.map.find(({ areaId }) => areaId === question.areaId).state));
+    assert.ok(result.cards.every(({ matchedResponseIds }) => matchedResponseIds.length === 1 && matchedResponseIds[0] === question.id));
+  }
+});
+
+test("specific deferred actions reach the relevant card while checking and protecting stay strengths", () => {
+  const cases = [
+    ["core-health-1", "finish-tonight", "reduce-task", "health-sleep-care", "sleep-recovery"],
+    ["core-time-2", "wait-for-block", "find-material", "time-work-energy", "implementation-intention"],
+    ["core-relationships-1", "accept-first", "offer-part", "relationships-boundaries", "relationship-boundaries"],
+    ["core-information-2", "sign-first", "request-copy", "information-rights", "read-before-signing"],
+    ["core-money-2", "monthly-first", "compare-total", "money-protection", "borrowing-apr"],
+    ["partner-parenting-home-child-safety", "screen-first", "check-guards", "safety-home", "child-window-guards"],
+  ];
+  for (const [questionId, deferred, protective, areaId, actionId] of cases) {
+    const question = buildQuestionSet(["partner-parenting"]).find(({ id }) => id === questionId);
+    assert.ok(question.options.some(({ value }) => value === deferred), `${questionId} has a real deferred-action choice`);
+    const review = select(snapshotFor({ [questionId]: deferred }, ["partner-parenting"]));
+    assert.equal(review.map.find((area) => area.areaId === areaId).state, "review");
+    assert.deepEqual(review.cards.map(({ action }) => action.id), [actionId]);
+    assert.deepEqual(review.cards[0].matchedResponseIds, [questionId]);
+    const strength = select(snapshotFor({ [questionId]: protective }, ["partner-parenting"]));
+    assert.equal(strength.map.find((area) => area.areaId === areaId).state, "strength");
+    assert.deepEqual(strength.cards, []);
+  }
+});
+
+test("simultaneous real reviews retain one card per priority and never fill beyond three", () => {
+  const answers = {
+    "core-health-1": "finish-tonight", "core-time-2": "wait-for-block",
+    "core-relationships-1": "accept-first", "core-information-2": "sign-first",
+    "core-money-2": "monthly-first", "partner-parenting-home-child-safety": "screen-first",
+  };
+  for (const question of buildQuestionSet(["partner-parenting"])) {
+    if (answers[question.id]) assert.ok(question.options.some(({ value }) => value === answers[question.id]));
+  }
+  const result = select(snapshotFor(answers, ["partner-parenting"]));
+  assert.deepEqual(result.cards.map(({ priority, action }) => [priority, action.id]), [
+    ["downside-risk", "child-window-guards"],
+    ["resource-protection", "implementation-intention"],
+    ["information-support", "read-before-signing"],
+  ]);
+  assert.ok(result.map.every(({ state }) => state === "review"));
 });
 
 test("every curated candidate preserves its audited complete entry and source limitations", () => {
