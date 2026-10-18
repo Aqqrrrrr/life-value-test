@@ -8,7 +8,7 @@ test("the first core page asks for a first step in a concrete situation", () => 
   const page = loadTestPage();
   click(page, "稳定工作");
   click(page, "开始测评");
-  assert.match(page.html(), /打车去赶车，车辆还停着/);
+  assert.match(page.html(), /网约车后排赶时间，安全带却卡住了/);
   assert.match(page.html(), /按你通常最可能先做的第一步选择/);
   assert.doesNotMatch(page.html(), /非常像我|比较不像我|决策风格/);
 });
