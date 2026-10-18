@@ -60,6 +60,42 @@ test("rejects invalid selections in both public helpers", async () => {
   }
 });
 
+test("medication scenario keeps every first action within the same short medication-organising task", async () => {
+  const { CORE_QUESTIONS } = await import(modulePath);
+  const question = CORE_QUESTIONS.find(({ id }) => id === "core-health-3");
+
+  assert.equal(question.prompt, "家里常备药有些混乱，其中几盒的名称或有效期看不清。你现在只有十分钟，最可能先做什么？");
+  assert.deepEqual(question.options.slice(0, -1).map(({ label }) => label), [
+    "把能辨认和信息不清的药分开，避免之后混用",
+    "拍下信息不清的药盒，记下准备向药师确认的问题",
+    "先把所有常备药集中到一处，周末再逐盒核对",
+  ]);
+});
+
+test("core scenarios use short, plain-language setups before asking for one immediate first action", async () => {
+  const { CORE_QUESTIONS } = await import(modulePath);
+  assert.deepEqual(Object.fromEntries(CORE_QUESTIONS.map(({ id, prompt }) => [id, prompt])), {
+    "core-safety-1": "你坐在网约车后排赶时间，安全带却卡住了，同行的人催着出发。你最可能先做什么？",
+    "core-safety-2": "出租屋里方便使用的插座只有一个。你打算添一台取暖器，今晚只有十分钟准备。你最可能先做什么？",
+    "core-safety-3": "刚搬进新住处，纸箱还没收拾好。睡前只剩十五分钟，你最可能先做什么？",
+    "core-health-1": "连续几天熬夜，明天还得早起。今晚有一件待办和半小时空档，你最可能先做什么？",
+    "core-health-2": "今天要连续处理几小时材料，场地又窄，没法专门留出运动时间。你最可能先做什么？",
+    "core-health-3": "家里常备药有些混乱，其中几盒的名称或有效期看不清。你现在只有十分钟，最可能先做什么？",
+    "core-money-1": "这月收入可能晚到两周，房租和几笔账单又快到期。今晚只有二十分钟理账，你最可能先做什么？",
+    "core-money-2": "常用设备坏了，得尽快换新；一次付清会占去大半月预算，店里也提供分期。你最可能先做什么？",
+    "core-money-3": "收到保障续费提醒，但手头已有几份不同渠道的保障。今天只能花二十分钟，你最可能先做什么？",
+    "core-time-1": "下午又多了一项临时任务，原有两项也得今天交；剩下时间最多完成两项。你最可能先做什么？",
+    "core-time-2": "一项生活手续拖了很久，材料也很分散。今天恰好空出十五分钟，你最可能先做什么？",
+    "core-time-3": "这周很累，周末只有半天空档，还要买日用品和处理家务。你最可能先做什么？",
+    "core-relationships-1": "朋友周末请你帮忙搬家，但你已有安排，只能抽出一小时。你最可能先做什么？",
+    "core-relationships-2": "最近有件烦心事想找人谈，但熟悉的人都很忙；你今晚也只有一小段空闲。你最可能先做什么？",
+    "core-relationships-3": "你和同住的人最近都很忙，采购、清洁和缴费常常撞在一起。今晚只能聊十分钟，你最可能先做什么？",
+    "core-information-1": "准备买一项服务时，两篇评测给出相反结论，优惠今晚截止。你只剩二十分钟，最可能先做什么？",
+    "core-information-2": "准备签一份服务约定，但销售只留十分钟介绍，文本很长，有些收费名词也不熟悉。你最可能先做什么？",
+    "core-information-3": "一笔服务扣费和预期不同，付款与聊天记录又散在几个应用里。午休只剩十五分钟，你最可能先做什么？",
+  });
+});
+
 test("scenario questions cover six areas and keep uncertainty separate from selected context", async () => {
   const { LIFE_AREAS, ASSESSMENT_CHAPTERS, CORE_QUESTIONS, STAGE_QUESTION_BANK } = await import(modulePath);
   assert.deepEqual(LIFE_AREAS.map(({ id }) => id), [
