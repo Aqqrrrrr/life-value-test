@@ -10,12 +10,12 @@ import {
   isSafetyRoute,
   validateStageSelection,
 } from "../../lib/life-value-assessment.mjs";
-import { LIFE_STAGES, buildQuestionSet } from "../../lib/life-stage-question-bank.mjs";
+import { ASSESSMENT_CHAPTERS, LIFE_AREAS, LIFE_STAGES, buildQuestionSet } from "../../lib/life-stage-question-bank.mjs";
 
-type Answer = string | number;
-type QuestionOption<Value extends Answer> = { value: Value; label: string };
-type AssessmentQuestion = { id: string; prompt: string } & (
-  | { group: "core"; input: "likert"; options: QuestionOption<number>[] }
+type Answer = string;
+type QuestionOption<Value> = { value: Value; label: string };
+type AssessmentQuestion = { id: string; prompt: string; areaId: string } & (
+  | { group: "core"; input: "single"; options: QuestionOption<string>[] }
   | { group: "stage"; input: "single"; options: QuestionOption<string>[] }
 );
 
@@ -65,6 +65,8 @@ export default function TestPage() {
 
   const questions: AssessmentQuestion[] = lifeStages.length ? buildQuestionSet(lifeStages) : [];
   const question = questions[index];
+  const chapter = ASSESSMENT_CHAPTERS.find(({ areaIds }) => areaIds.includes(question?.areaId));
+  const area = LIFE_AREAS.find(({ id }) => id === question?.areaId);
   const answerReady = Boolean(question?.options.some((option) => option.value === answers[question.id]));
   const step = emergency ? emergencySteps[emergency] : null;
 
@@ -164,14 +166,14 @@ export default function TestPage() {
           <section className="mt-8 rounded-[2rem] bg-[#fbf9f6] p-7 shadow-sm sm:p-12">
             <p className="text-sm font-semibold text-[#a0633d]">从眼下的生活开始</p>
             <h1 className="mt-4 text-3xl font-bold leading-tight">选择你的当前生活阶段</h1>
-            <p className="mt-4 text-sm leading-6 text-[#756b62]">可选择 1 至 3 项。18 道核心题加上每个阶段的 4 道处境题，共 22 至 30 题。</p>
+            <p className="mt-4 text-sm leading-6 text-[#756b62]">可选择 1 至 3 项。18 道通用生活选择 + 每阶段 4 道处境题，共 22 至 30 题。</p>
             <div className="mt-8 space-y-3">{LIFE_STAGES.map((item) => (
               <button key={item.id} type="button" aria-pressed={lifeStages.includes(item.id)} disabled={lifeStages.length >= 3 && !lifeStages.includes(item.id)} onClick={() => chooseStage(item.id)} className={`${optionClass(lifeStages.includes(item.id))} disabled:cursor-not-allowed disabled:opacity-40`}>{item.label}</button>
             ))}</div>
             {lifeStages.length > 0 && (
               <fieldset className="mt-8">
                 <legend className="font-semibold">优先展示哪个阶段？（可选）</legend>
-                <p className="mt-2 text-sm leading-6 text-[#756b62]">只调整结果展示顺序，不改变题目、计分或建议资格。</p>
+                <p className="mt-2 text-sm leading-6 text-[#756b62]">只调整生活阶段的展示顺序，不改变题目或复盘行动的适用条件。</p>
                 <div className="mt-4 space-y-3">
                   <button type="button" aria-pressed={priorityStage === null} onClick={() => setPriorityStage(null)} className={optionClass(priorityStage === null)}>不设优先阶段</button>
                   {LIFE_STAGES.filter(({ id }) => lifeStages.includes(id)).map((item) => (
@@ -187,10 +189,10 @@ export default function TestPage() {
 
         {!helpOpen && stage === "questions" && question && (
           <>
-            <div className="mt-8 flex items-center justify-between text-sm text-[#756b62]"><span>{question.group === "core" ? "决策风格" : "阶段处境"}</span><span>{index + 1} / {questions.length}</span></div>
+            <div className="mt-8 flex flex-wrap items-center justify-between gap-2 text-sm text-[#756b62]"><span>当前章节：{chapter?.label} · 生活区域：{area?.label}</span><span>{index + 1} / {questions.length}</span></div>
             <div className="mt-3 h-2 rounded-full bg-[#e5dbd1]" role="progressbar" aria-label="测评进度" aria-valuemin={0} aria-valuemax={questions.length} aria-valuenow={index + 1}><div className="h-2 rounded-full bg-[#a0633d] transition-all" style={{ width: `${((index + 1) / questions.length) * 100}%` }} /></div>
             <section className="mt-12 rounded-[2rem] bg-[#fbf9f6] p-7 shadow-sm sm:p-12">
-              <p className="text-sm font-semibold text-[#a0633d]">{question.group === "core" ? "按平时的真实倾向回答" : "按眼下的实际情况回答"}</p>
+              <p className="text-sm font-semibold text-[#a0633d]">按你通常最可能先做的第一步选择</p>
               <h1 className="mt-4 text-3xl font-bold leading-tight">{question.prompt}</h1>
               <div className="mt-8 space-y-3">{question.options.map((option) => (
                 <button key={option.value} type="button" aria-pressed={answers[question.id] === option.value} onClick={() => chooseAnswer(option.value)} className={optionClass(answers[question.id] === option.value)}>{option.label}</button>

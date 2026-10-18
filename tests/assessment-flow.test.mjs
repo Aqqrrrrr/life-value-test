@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ASSESSMENT_STORAGE_KEY, parseAssessmentSnapshot } from "../lib/life-value-assessment.mjs";
-import { buildQuestionSet } from "../lib/life-stage-question-bank.mjs";
+import { ASSESSMENT_CHAPTERS, LIFE_AREAS, buildQuestionSet } from "../lib/life-stage-question-bank.mjs";
 import { click, findButton, loadTestPage } from "./emergency-routing.test.mjs";
+
+test("the first core page asks for a first step in a concrete situation", () => {
+  const page = loadTestPage();
+  click(page, "稳定工作");
+  click(page, "开始测评");
+  assert.match(page.html(), /打车去赶车，车辆还停着/);
+  assert.match(page.html(), /按你通常最可能先做的第一步选择/);
+  assert.doesNotMatch(page.html(), /非常像我|比较不像我|决策风格/);
+});
 
 test("intake requires one to three unique stages and prevents an empty start", () => {
   const page = loadTestPage();
@@ -40,7 +49,7 @@ for (const { labels, stages, count } of [
   { labels: ["稳定工作", "独居"], stages: ["stable-work", "living-alone"], count: 26 },
   { labels: ["稳定工作", "独居", "伴侣/育儿"], stages: ["stable-work", "living-alone", "partner-parenting"], count: 30 },
 ]) {
-  test(`${labels.length} stages show ${count} questions and persist only the completed v3 snapshot`, (t) => {
+  test(`${labels.length} stages show chapter and area on every question and persist only completed v4 uncertainty answers`, (t) => {
     const writes = [];
     const events = [];
     const originalWindow = globalThis.window;
@@ -54,12 +63,16 @@ for (const { labels, stages, count } of [
     for (const [index, question] of questions.entries()) {
       assert.match(page.html(), new RegExp(`${index + 1} / ${count}`));
       assert.ok(page.html().includes(question.prompt));
+      assert.ok(page.html().includes(ASSESSMENT_CHAPTERS.find(({ areaIds }) => areaIds.includes(question.areaId)).label));
+      assert.ok(page.html().includes(LIFE_AREAS.find(({ id }) => id === question.areaId).label));
+      assert.match(page.html(), /按你通常最可能先做的第一步选择/);
+      assert.doesNotMatch(page.html(), /决策风格|非常像我|计分|人格/);
       const next = index === count - 1 ? "查看结果" : "下一步";
       assert.equal(findButton(page.render(), next).props.disabled, true);
       click(page, next, { allowDisabled: true });
       assert.equal(page.snapshots.length, 0);
       assert.deepEqual(writes, []);
-      click(page, question.options[0].label);
+      click(page, "我没遇过 / 目前不确定");
       if (index !== count - 1) click(page, next);
     }
     assert.equal(page.snapshots.length, 0);
@@ -70,6 +83,8 @@ for (const { labels, stages, count } of [
     assert.equal(writes[0][0], ASSESSMENT_STORAGE_KEY);
     const snapshot = parseAssessmentSnapshot(writes[0][1]);
     assert.ok(snapshot);
+    assert.equal(snapshot.version, 4);
+    assert.ok(Object.values(snapshot.answers).every((answer) => answer === "not-sure"));
     assert.equal(Object.keys(snapshot.answers).length, count);
     assert.deepEqual(Object.keys(snapshot.answers), questions.map(({ id }) => id));
     assert.deepEqual(snapshot.lifeStages, stages);
@@ -82,19 +97,20 @@ test("back follows generated questions and returns to intake without discarding 
   const page = loadTestPage();
   click(page, "稳定工作");
   click(page, "开始测评");
-  click(page, "非常像我");
+  const questions = buildQuestionSet(["stable-work"]);
+  click(page, questions[0].options[0].label);
   click(page, "下一步");
-  click(page, "比较不像我");
+  click(page, questions[1].options[1].label);
   click(page, "上一步");
-  assert.equal(findButton(page.render(), "非常像我").props["aria-pressed"], true);
+  assert.equal(findButton(page.render(), questions[0].options[0].label).props["aria-pressed"], true);
   click(page, "上一步");
   assert.match(page.html(), /当前生活阶段/);
   click(page, "独居");
   click(page, "开始测评");
   assert.match(page.html(), /1 \/ 26/);
-  assert.equal(findButton(page.render(), "非常像我").props["aria-pressed"], true);
+  assert.equal(findButton(page.render(), questions[0].options[0].label).props["aria-pressed"], true);
   click(page, "下一步");
-  assert.equal(findButton(page.render(), "比较不像我").props["aria-pressed"], true);
+  assert.equal(findButton(page.render(), questions[1].options[1].label).props["aria-pressed"], true);
   assert.equal(page.snapshots.length, 0);
 });
 
